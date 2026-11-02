@@ -1,0 +1,12 @@
+{
+  "name": "splitbot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Splitwise-style expense splitting driven by plain-English chat and a Gemini agent",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node -e \"console.log('No workspaces yet: real tests arrive in Step 1')\""
+  }
+}

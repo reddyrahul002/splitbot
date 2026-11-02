@@ -90,16 +90,74 @@ export interface DraftWarning {
   suggestion?: { name: string; person: Person };
 }
 
+/** Prefix of the provisional ids that people who don't exist yet get inside a draft, e.g. `new:kai`. */
+export const NEW_PERSON_PREFIX = 'new:';
+
 interface DraftBase {
   id: string;
-  /** Names that don't exist yet; created only on Confirm. */
-  newPeople: string[];
+  /** People who don't exist yet, with provisional `new:` ids; created only on Confirm. */
+  newPeople: Person[];
   warnings: DraftWarning[];
 }
 
 export type Draft =
   | (DraftBase & { kind: 'expense'; expense: Expense })
   | (DraftBase & { kind: 'settlement'; settlement: Settlement });
+
+/** Expense draft request. People are given by name ("me" is the user); money is integer cents. */
+export interface ExpenseDraftInput {
+  description: string;
+  category: Category;
+  /** YYYY-MM-DD; defaults to today. */
+  date?: string;
+  totalCents: number;
+  paidBy: string;
+  participants: string[];
+  splitType: SplitType;
+  adjustments?: { person: string; cents: number; note?: string }[];
+  exact?: Record<string, number>;
+  percent?: Record<string, number>;
+  shares?: Record<string, number>;
+}
+
+/** Settlement draft request: `from` paid `to`. */
+export interface SettlementDraftInput {
+  from: string;
+  to: string;
+  cents: number;
+  /** YYYY-MM-DD; defaults to today. */
+  date?: string;
+}
+
+export type DraftRequest = ({ kind: 'expense' } & ExpenseDraftInput) | ({ kind: 'settlement' } & SettlementDraftInput);
+
+/** Edits to a draft. Ids refer to people in the draft (including `new:` ids) or existing people. */
+export interface DraftEdits {
+  description?: string;
+  category?: Category;
+  date?: string;
+  /** Expense only. */
+  totalCents?: number;
+  /** Expense only. */
+  paidBy?: PersonId;
+  /** Settlement only. */
+  cents?: number;
+  /** "Use Arun": swap a person in the draft for an existing person. */
+  replace?: { from: PersonId; to: PersonId }[];
+}
+
+export type ConfirmResult =
+  | { kind: 'expense'; expense: Expense; createdPeople: Person[] }
+  | { kind: 'settlement'; settlement: Settlement; createdPeople: Person[] };
+
+export interface BalancesResponse {
+  balances: Balance[];
+  debts: Transfer[];
+}
+
+export interface ApiError {
+  error: { code: string; message: string };
+}
 
 /** Net position: positive means the person is owed money, negative means they owe. */
 export interface Balance {

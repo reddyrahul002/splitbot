@@ -53,8 +53,8 @@ export function checkAmounts(message: string, split: CheckedSplit, people: Perso
 
 /** Edit distance on normalized names (trimmed, lowercase, NFC), counted in code points. */
 export function levenshtein(a: string, b: string): number {
-  const s = [...normalize(a)];
-  const t = [...normalize(b)];
+  const s = [...normalizeName(a)];
+  const t = [...normalizeName(b)];
   let prev = Array.from({ length: t.length + 1 }, (_, j) => j);
   for (let i = 1; i <= s.length; i++) {
     const row = [i];
@@ -73,14 +73,14 @@ export function levenshtein(a: string, b: string): number {
  * `me` is never suggested, but typing me's own name counts as an exact match.
  */
 export function findCloseName(name: string, people: Person[]): Person | null {
-  const n = normalize(name);
+  const n = normalizeName(name);
   if (n === '' || n === ME_ID) return null;
-  if (people.some((p) => normalize(p.name) === n)) return null;
+  if (people.some((p) => normalizeName(p.name) === n)) return null;
   const others = people.filter((p) => p.id !== ME_ID);
 
   let best: { person: Person; distance: number } | null = null;
   for (const person of others) {
-    const q = normalize(person.name);
+    const q = normalizeName(person.name);
     const distance = levenshtein(n, q);
     const [short, long] = [...n].length <= [...q].length ? [n, q] : [q, n];
     const threshold = [...long].length <= 4 ? 1 : 2;
@@ -96,8 +96,8 @@ export function checkNames(names: { paidBy: string; participants: string[] }, pe
   const warnings: DraftWarning[] = [];
   for (const raw of [names.paidBy, ...names.participants]) {
     const typed = raw.trim();
-    if (typed === '' || seen.has(normalize(typed))) continue;
-    seen.add(normalize(typed));
+    if (typed === '' || seen.has(normalizeName(typed))) continue;
+    seen.add(normalizeName(typed));
     const person = findCloseName(typed, people);
     if (person) {
       warnings.push({
@@ -110,6 +110,7 @@ export function checkNames(names: { paidBy: string; participants: string[] }, pe
   return warnings;
 }
 
-function normalize(name: string): string {
+/** How names are compared everywhere: NFC, trimmed, lowercase. */
+export function normalizeName(name: string): string {
   return name.normalize('NFC').trim().toLowerCase();
 }

@@ -22,7 +22,8 @@ splitbot/
   package.json            # workspaces: shared, server, client; "dev" runs both via concurrently
   shared/src/types.ts     # Person, Expense, Settlement, Draft, Balance, Transfer, ChatMessage, Category
   server/
-    src/index.ts          # Express app, routes, CORS, dotenv
+    src/index.ts          # entry point: dotenv, CORS, opens the store, listen
+    src/app.ts            # createApp(deps): Express routes + JSON error handler (testable with supertest)
     src/store.ts          # JSON file store (data/db.json): in-memory cache, atomic write (tmp + rename), serialized write queue
     src/domain/split.ts   # computeShares(): equal | exact | percent | shares, plus itemized adjustments
     src/domain/balances.ts# net balances, pairwise "who owes whom"
@@ -45,7 +46,7 @@ Dependencies: express, cors, dotenv, @google/genai, zod, nanoid; vitest, tsx, co
 - `Person { id, name }`. A built-in person with id `me` represents the user. The agent resolves "I" and "me" to it. New names are created only when an expense is confirmed, and the draft card shows them as "new".
 - `Expense { id, description, category, date, totalCents, paidBy: personId, shares: {personId, cents}[], splitMeta, createdAt }`. Storing the computed shares makes balances simple sums.
 - `Settlement { id, from, to, cents, date }`. This records a payment, e.g. "Arun paid me back $20".
-- `Draft = { kind: 'expense', expense } | { kind: 'settlement', settlement }` plus `id`, `newPeople[]` and `warnings: DraftWarning[]`, where `DraftWarning = { code, message, suggestion? }` (structured since Step 2, so the DraftCard can render "Use Arun").
+- `Draft = { kind: 'expense', expense } | { kind: 'settlement', settlement }` plus `id`, `newPeople: Person[]` (provisional `new:<name>` ids until Confirm, since Step 3) and `warnings: DraftWarning[]`, where `DraftWarning = { code, message, suggestion? }` (structured since Step 2, so the DraftCard can render "Use Arun").
 - Categories (fixed enum): Food & Drink, Groceries, Transport, Housing & Utilities, Entertainment, Travel, Shopping, Other.
 
 ## Split engine (server/src/domain/split.ts)
@@ -94,13 +95,14 @@ Chat history lives in client state and is sent with each request; the server is 
 
 ## REST API (server/src/index.ts)
 - `POST /api/chat` `{ messages }` → `{ reply, drafts }`
+- `POST /api/drafts` creates an expense or settlement draft from name-based input (the same builder the agent's tools use). The manual form fallback and Settle up's "Record" use it, so every write goes through a draft and the app still works when Gemini is unavailable.
+- `PATCH /api/drafts/:id` applies edits and returns the recomputed draft without saving.
 - `POST /api/drafts/:id/confirm` (optionally with edited fields; shares are recomputed on the server) → saved record. `DELETE /api/drafts/:id` discards a draft.
-- `GET /api/people`, `GET /api/expenses`, `DELETE /api/expenses/:id`, `GET /api/balances`, `GET /api/settlements/suggest`, `GET /api/summary?from&to`
-- `POST /api/expenses`: manual form fallback, so the app still works when Gemini is unavailable. It goes through the same split engine.
+- `GET /api/people`, `GET /api/expenses`, `DELETE /api/expenses/:id`, `GET /api/settlements`, `DELETE /api/settlements/:id`, `GET /api/balances`, `GET /api/settlements/suggest`, `GET /api/summary?from&to`
 
 ## Frontend
 - **Chat**: message list, input box and example-prompt chips.
-- **DraftCard**: editable fields (description, amount, payer, category, date), a table of each person's share, and "new person" badges. Buttons: Confirm / Discard. Editing a field calls the server to recompute the shares.
+- **DraftCard**: editable fields (description, amount, payer, category, date), a table of each person's share, and "new person" badges. Buttons: Confirm / Discard. Editing a field calls `PATCH /api/drafts/:id` to recompute the shares.
 - **Balances**: a list of "Arun owes you $38.00", with green for money owed to you and red for money you owe.
 - **Settle up**: suggested transfers, each with a "Record" button that creates a settlement draft and confirms it.
 - **Insights (Recharts)**: donut chart of spending by category, bar chart by month, and a toggle between "my share" and "group total". I'll load the `dataviz` skill before writing the chart code.
@@ -123,11 +125,11 @@ Each step ends with `npm test` passing and a commit. After each step I stop for 
   - Also in this step: `.gitignore`, root `package.json` with workspaces, and a `npm test` that runs and passes.
 - **Step 1: Shared types + split engine** (Day 1 morning). Tests first. Covers `split.ts`: leftover cents, itemized adjustments, exact/percent/shares, and validation errors.
 - **Step 2: Balances, settle-up, summary, guardrails** (Day 1 morning). Tests first. Covers `balances.ts`, `settle.ts`, `summary.ts` and `guardrails.ts`, including amount and close-name detection.
-- **Step 3: JSON store + drafts + REST API** (Day 1 afternoon). Tests cover store round-trip and atomic writes, and the draft confirm/discard flow through the routes (supertest). The `/api/chat` route is not included yet.
+- **Step 3: JSON store + drafts + REST API** (Day 1 afternoon). Tests cover store round-trip and atomic writes, and the draft create/edit/confirm/discard flow through the routes (supertest). The `/api/chat` route is not included yet. See "Step 3 detail" below.
 - **Step 4: Gemini agent** (Day 1 afternoon). Tools, loop, prompt and `/api/chat`. Tests use a mocked Gemini client and cover tool dispatch, the 5-call cap, errors going back to the model, and guardrail warnings appearing on drafts. Then a manual curl check against real Gemini, and the eval script.
 - **Step 5: Chat UI + DraftCard + confirm flow** (Day 1 evening). The dinner example works end to end in the browser, and warnings and "Use Arun" are visible.
 - **Step 6: Balances, Settle up, History panels** (Day 2 morning).
-- **Step 7: Insights charts + polish** (Day 2 morning). Recharts donut and bar charts, error and empty states, manual expense form fallback, README with setup steps and screenshots, and DECISIONS.md brought up to date.
+- **Step 7: Insights charts + polish** (Day 2 morning). Recharts donut and bar charts, error and empty states, manual expense form fallback (via `POST /api/drafts` + confirm), README with setup steps and screenshots, and DECISIONS.md brought up to date.
 - **Step 8 (stretch): Deploy** the server to Render and the client to Vercel. Render's free tier has an ephemeral disk, so the JSON file would reset on restart; document this or move to a free hosted database.
 
 ## Step 1 detail: shared types + split engine
@@ -326,6 +328,37 @@ Prerequisite: Step 1 is committed. All four modules are pure functions in `serve
 
 ### Done when
 `npm test` and `npm run typecheck` pass. Then run `/review-step`, commit "Step 2: balances, settle-up, summary, guardrails", and stop for review.
+
+## Step 3 detail: JSON store, drafts, REST API
+Prerequisite: Step 2 is committed. `/api/chat` and Gemini wait for Step 4. Step 4's `create_expense_draft` tool calls the same `buildExpenseDraft` as `POST /api/drafts`.
+
+### Files
+| File | Contents |
+|---|---|
+| `shared/src/types.ts` | `newPeople: Person[]`, `NEW_PERSON_PREFIX`, `ExpenseDraftInput`, `SettlementDraftInput`, `DraftRequest`, `DraftEdits`, `ConfirmResult`, `BalancesResponse`, `ApiError` |
+| `server/src/store.ts` | `openStore(path, { fs? })`: cache, `snapshot()` (deep copy), `update(fn)` (serialized queue; fn runs on a copy, tmp write + rename, cache updated only after the rename). Missing file → seed with `me` ("Me"); corrupt or wrong-shaped file → throws, never overwritten; a file without `me` gets it added. Path `server/data/db.json`, or `DB_PATH` |
+| `server/src/drafts.ts` | `createDraftStore({ ttlMs = 30 min, now })` (lazy expiry, sweep on put, no timers), `buildExpenseDraft`, `buildSettlementDraft`, `applyEdits`, `finalizeDraft`, `DraftError` |
+| `server/src/app.ts`, `server/src/index.ts` | `createApp({ store, drafts, today, now?, log? })` with zod-validated bodies; index.ts does dotenv, CORS (localhost origins) and `listen` |
+| `server/src/domain/guardrails.ts`, `summary.ts` | export `normalizeName` and `assertDate` (no logic change) |
+| `server/test/{store,drafts,api}.test.ts` | written first; confirmed to fail before the implementation existed |
+
+### Rules
+- **Names:** `me` or me's display name → `me`; a normalized exact match → that person; anything else → provisional `new:<normalized name>`, listed in `newPeople` with the typed name. Names in adjustments and the exact/percent/shares maps resolve the same way.
+- **Warnings:** `checkNames` always; `checkAmounts` only when a `message` is given (the agent passes it in Step 4).
+- **Edits** (`description`, `category`, `date`, `totalCents`, `paidBy`, `cents` for settlements, `replace: { from, to }[]` for "Use Arun"; edits for the other kind → `INVALID_EDIT`): applied, then shares are recomputed from the current participants and `splitMeta`. Any error leaves the draft unchanged. PATCH replaces the draft (same id) and restarts its TTL. `CLOSE_NAME` warnings stay only for new people who remain; an amount edit clears `AMOUNT_NOT_IN_MESSAGE`.
+- **Confirm** is all-or-nothing: the draft is taken before the write and restored if the write fails; a concurrent second confirm gets 404. Edits and finalizing run inside the store update, so a `new:` person matching someone created meanwhile is reused.
+- **Errors:** `{ error: { code, message } }`. zod/malformed JSON → 400 `VALIDATION_ERROR`; `SplitError`/`DraftError` → 400 with their code; bad summary dates → 400 `INVALID_DATE`; missing draft → 404 `DRAFT_NOT_FOUND`; missing record or route → 404 `NOT_FOUND`; anything else → 500 `INTERNAL` with a generic message (logged, the request isn't).
+- **Ordering:** expenses newest first by `date`, then `createdAt`; settlements by `date`, then most recently stored. People are never deleted.
+
+### Test cases (written first)
+**store:** 1 seed + directory · 2 round trip · 3 snapshot is a copy · 4 corrupt JSON rejected, file untouched · 5 wrong shape rejected · 6 missing `me` added · 7 rename failure: old file, cache unchanged, no `.tmp` · 8 queue recovers after a failed write · 9 throwing fn: nothing written, queue continues · 10 50 concurrent updates in order
+**draft store:** 11 round trip, unique ids · 12 TTL boundary · 13 take/restore · 14 sweep on put
+**builder:** 15 dinner · 16 trimmed/case/NFC/me resolution · 17 `new:kai` · 18 Kai + kai → `DUPLICATE_PARTICIPANT` · 19 name-keyed maps → id-keyed `splitMeta` · 20 Aroon → `CLOSE_NAME` · 21 amount check only with a message · 22 default date, `INVALID_DATE` · 23 `SplitError` passes through · 24 settlement: resolve, `SAME_PERSON`, `INVALID_AMOUNT`, close name · 25 "constructor"
+**edits and finalize:** 26 no `new:` ids left · 27 reuse a person created meanwhile · 28 total/description/category/date/payer edits, settlement cents edit · 29 "Use Arun" · 30 bad replacements, wrong-kind edits · 31 failed edit leaves the draft unchanged · 57 amount edit clears amount warnings
+**API:** 32–50 people, drafts, confirm (with/without edits, invalid, expired, double, concurrent), discard, balances, suggest, summary, expense order and delete, restart, write failure → 500, unknown route · 51–56 PATCH (recompute without saving, "Use Arun", stacking, invalid edits, 404, TTL restart) · 58–60 settlements list, delete, unknown id
+
+### Done when
+`npm test`, `npm run typecheck` and a curl smoke check (draft → PATCH → confirm → balances → settlement list/delete → restart, data still there) pass. Then stop for review; the user runs `/review-step` and commits.
 
 ## Verification
 - **Unit tests (vitest)**, run with `npm test -w server`:

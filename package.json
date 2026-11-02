@@ -11,6 +11,7 @@
     "server"
   ],
   "scripts": {
+    "dev": "npm run dev -w server",
     "test": "npm test -w server",
     "typecheck": "npm run typecheck --workspaces --if-present"
   }

@@ -1,5 +1,14 @@
-// Test builders and a seeded PRNG shared by the domain tests.
+// Test builders, a seeded PRNG and temp directories shared by the tests.
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Category, Expense, PersonId, Settlement } from '@splitbot/shared';
+
+/** A fresh temp directory; call the returned cleanup in afterEach. */
+export async function tempDir(): Promise<{ dir: string; cleanup: () => Promise<void> }> {
+  const dir = await mkdtemp(join(tmpdir(), 'splitbot-'));
+  return { dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
+}
 
 let nextId = 1;
 

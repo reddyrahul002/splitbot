@@ -53,7 +53,7 @@ export function spendingSummary(expenses: Expense[], options: SummaryOptions = {
 }
 
 /** Throws unless `date` is a real calendar date written YYYY-MM-DD. */
-function assertDate(date: string, what: string): void {
+export function assertDate(date: string, what: string): void {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
   const [y, mo, d] = m ? [Number(m[1]), Number(m[2]), Number(m[3])] : [0, 0, 0];
   const parsed = new Date(Date.UTC(y, mo - 1, d));

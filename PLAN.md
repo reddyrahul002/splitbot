@@ -26,7 +26,7 @@ splitbot/
     src/store.ts          # JSON file store (data/db.json): in-memory cache, atomic write (tmp + rename), serialized write queue
     src/domain/split.ts   # computeShares(): equal | exact | percent | shares, plus itemized adjustments
     src/domain/balances.ts# net balances, pairwise "who owes whom"
-    src/domain/settle.ts  # minimum-transfers debt simplification (greedy: largest creditor vs largest debtor)
+    src/domain/settle.ts  # greedy settle-up (at most n−1 transfers): largest creditor vs largest debtor
     src/domain/summary.ts # spend by category and by month (the user's own share vs group total)
     src/agent/tools.ts    # Gemini function declarations + handlers (call domain + store)
     src/agent/loop.ts     # function-calling loop, 5-call cap, error -> model feedback
@@ -45,7 +45,7 @@ Dependencies: express, cors, dotenv, @google/genai, zod, nanoid; vitest, tsx, co
 - `Person { id, name }`. A built-in person with id `me` represents the user. The agent resolves "I" and "me" to it. New names are created only when an expense is confirmed, and the draft card shows them as "new".
 - `Expense { id, description, category, date, totalCents, paidBy: personId, shares: {personId, cents}[], splitMeta, createdAt }`. Storing the computed shares makes balances simple sums.
 - `Settlement { id, from, to, cents, date }`. This records a payment, e.g. "Arun paid me back $20".
-- `Draft = { kind: 'expense', expense } | { kind: 'settlement', settlement }` plus `id`, `newPeople[]` and `warnings[]`.
+- `Draft = { kind: 'expense', expense } | { kind: 'settlement', settlement }` plus `id`, `newPeople[]` and `warnings: DraftWarning[]`, where `DraftWarning = { code, message, suggestion? }` (structured since Step 2, so the DraftCard can render "Use Arun").
 - Categories (fixed enum): Food & Drink, Groceries, Transport, Housing & Utilities, Entertainment, Travel, Shopping, Other.
 
 ## Split engine (server/src/domain/split.ts)
@@ -70,7 +70,7 @@ Input: `{ totalCents, participants[], splitType, adjustments?: {person, cents, n
 | `list_expenses` | read | Filter by person or category, with a limit |
 
 **Draft guardrails (in `create_expense_draft`; these add to `draft.warnings[]` and never block the draft):**
-- **Amount check:** the handler receives the user's latest message from the loop. It pulls out every number in the message, handling `$`, commas, decimals and forms like "90 bucks", and compares them with the total and each adjustment amount. Any amount that isn't in the message gets a warning, e.g. "Total $95.00 wasn't in your message, please check." For percent/shares splits, the percentages and share counts are checked the same way.
+- **Amount check:** the handler receives the user's latest message from the loop. It pulls out every number in the message, handling `$`, commas, decimals and forms like "90 bucks", and compares them with the total and each adjustment amount. Any amount that isn't in the message gets a warning, e.g. "Total $95.00 wasn't in your message, please check." For exact/percent/shares splits, each person's exact amount, percentage or share count is checked the same way.
 - **Close-name check:** each participant or payer name that doesn't exactly match an existing person (case-insensitive) is compared with existing names using Levenshtein distance (≤2, or ≤1 for names of 4 letters or fewer) plus a shared-prefix check. A close match gets a warning, e.g. "'Aroon' looks like existing person 'Arun'. Use Arun?". The DraftCard shows this with a one-click "Use Arun" button, and nothing is silently merged or created. New people are created only on Confirm, after the user has seen these warnings. The logic lives in `server/src/domain/guardrails.ts` so it can be unit tested.
 
 Tool parameter schemas are written in zod and converted to Gemini `FunctionDeclaration`s, and the same zod schema validates the model's arguments.
@@ -212,6 +212,120 @@ Prerequisite: Step 0 is committed. Step 1 also adds the `workspaces` field to th
 
 ### Done when
 `npm test` and `npm run typecheck` pass. Then commit "Step 1: shared types and split engine" and stop for `/review-step`.
+
+## Step 2 detail: balances, settle-up, summary, guardrails
+Prerequisite: Step 1 is committed. All four modules are pure functions in `server/src/domain/`.
+
+### Files
+| File | Contents |
+|---|---|
+| `shared/src/types.ts` | `Draft.warnings` becomes `DraftWarning[]` (`{ code: 'AMOUNT_NOT_IN_MESSAGE' \| 'CLOSE_NAME', message, suggestion?: { name, person } }`); adds `SpendRow`, `CategorySpend`, `MonthSpend`, `SpendingSummary` |
+| `server/src/domain/balances.ts` | `computeBalances(people, expenses, settlements): Balance[]`, `pairwiseDebts(people, expenses, settlements): Transfer[]` |
+| `server/src/domain/settle.ts` | `suggestSettlements(balances): Transfer[]` |
+| `server/src/domain/summary.ts` | `spendingSummary(expenses, { from?, to?, personId? }): SpendingSummary` |
+| `server/src/domain/guardrails.ts` | `extractNumbers`, `checkAmounts`, `levenshtein`, `findCloseName`, `checkNames` |
+| `server/src/domain/money.ts` | `describeCents` moves here from split.ts (exported), so settle-up error messages can use it too |
+| `server/test/{balances,settle,summary,guardrails}.test.ts` | written first; confirmed to fail before the implementation exists |
+| `server/test/helpers.ts` | shared test builders (`expense`, `settlement`) and the seeded PRNG (`rng`, `randInt`) |
+| `server/test/split.test.ts` | uses the shared `rng` from helpers.ts instead of its own copy; no assertions changed |
+| `server/package.json`, `server/tsconfig.json` | adds `@types/node` (dev) and `"types": ["node"]`, for `structuredClone` now and `fs` in Step 3 |
+
+### Rules
+- **Net balance** = what the person paid − their shares. A settlement `from → to` adds `cents` to `from` and subtracts it from `to`.
+- **Pairwise debts:** each participant who isn't the payer owes the payer their share. Debts are netted per pair, and settlements reduce them (overpaying flips the direction). Only pairs with cents > 0 are returned, sorted by cents (largest first), with ties in `people` order (by `from`, then `to`). Debts are not chained; simplifying them is settle.ts's job.
+- **Balances output:** one `Balance` per person in `people`, in that order, including people at 0. An id in a record that isn't in `people` throws.
+- **Settle-up:** greedy. Repeatedly match the largest creditor with the largest debtor and transfer the smaller of the two amounts. Ties on amount go in input order. This guarantees at most n−1 transfers (n = people with a non-zero balance) but not always the true minimum, which is NP-hard. Balances must be integers that add up to 0, or it throws (messages in dollars).
+- **Summary input:** `from`, `to` and every expense date must be real YYYY-MM-DD dates, and every category must be in `CATEGORIES`, or it throws `RangeError`. This also guarantees the month fill always terminates.
+- **Summary:** "my share" is `personId`'s share (default `me`), not what they paid. The group total is `totalCents`. Settlements aren't spending. The date range includes both ends; `from > to` throws. Categories come out in `CATEGORIES` order, and categories with no expenses are left out. Months are `YYYY-MM`, oldest first, and empty months between the first and last are filled with zeros. `myCents`/`totalCents` overall equal the sums of both lists.
+- **Amount check:** `extractNumbers` returns the raw numbers in the message (`$`, thousands commas only when exactly 3 digits follow, decimals, `60/40`, `2:1:1`; "90 bucks" is just 90). The total, each adjustment and each exact amount match if `toCents(n)` equals them; percentages and share counts match if equal to a number in the message. Values of 0 (exact 0, 0%) are not checked, because "owes nothing" usually has no number. One `AMOUNT_NOT_IN_MESSAGE` warning per missing value, e.g. "Total $95.00 wasn't in your message, please check."
+- **Close-name check:** names are trimmed, lowercased and NFC-normalized; empty names are ignored. An exact match on any existing person, including me's display name, gives no warning. Otherwise a person is close if the Levenshtein distance is ≤2 (≤1 when the longer of the two names has 4 letters or fewer), or one name starts with the other and the shorter has at least 3 letters. The closest match wins (lowest distance, ties in `people` order). `me` is never suggested. The warning is `CLOSE_NAME` with `suggestion: { name, person }`, message "'Aroon' looks like existing person 'Arun'. Use Arun?".
+
+### Test cases (written first)
+**balances**
+1. Dinner example (9000 paid by me; 2600/3800/2600) → me +6400, Arun −3800, Mei −2600
+2. Pairwise for the same data → Arun→me 3800, Mei→me 2600
+3. Payer not a participant → payer +total, and pairwise covers the full amount
+4. Opposite-direction expenses between one pair net to one debt
+5. Debts that cancel exactly → no pair
+6. A partial settlement reduces the debt
+7. Paying off the full debt → balance 0, no pair
+8. Overpaying flips the direction
+9. A settlement with no expenses creates a debt
+10. A owes B and B owes C stay as two pairs
+11. No records → everyone at 0, no pairs
+12. Output follows `people` order, including people at 0
+13. Unknown person id in an expense or settlement → throws
+14. A zero share creates no pair
+15. Seeded random loop (500): balances add up to 0; net = owed to them − they owe; all integers
+
+**settle**
+16. Dinner balances → Arun→me 3800, Mei→me 2600
+17. All zeros / empty → `[]`
+18. One debtor, one creditor → 1 transfer
+19. A −10, B −20, C +10, D +20 → B→D 20, A→C 10
+20. A −30, B +10, C +20 → A→C 20, A→B 10
+21. Ties go in input order; deterministic
+22. Balances not adding up to 0 → throws
+23. Non-integer balance → throws
+24. 10¹³-cent values stay exact
+25. Seeded random loop (500): transfers clear every balance, number ≤ n−1, are positive integers with `from ≠ to`, and nobody both sends and receives
+
+**summary**
+26. One expense → category has myCents = my share, totalCents = total
+27. Expenses in one category add up
+28. An expense without me → my share 0, still in group total
+29. I paid but didn't take part → my share 0
+30. Settlements aren't an input
+31. `CATEGORIES` order; categories with no expenses left out
+32. Grouped by month, oldest first
+33. Empty months in between filled with zeros
+34. Across a year boundary
+35. The range includes both ends
+36. Only `from`, or only `to`
+37. `from > to` throws; no matches → empty lists and 0 totals
+38. Overall totals equal both list sums
+39. `personId: 'arun'` → Arun's share
+
+**guardrails**
+40. `$90`, `90`, `90 bucks`, `$90.00` → 90
+41. `$1,800` → 1800, `1,800.50` → 1800.5
+42. `12.5`, `$12.50` → 12.5
+43. Dinner sentence → [90, 12]
+44. `60/40` → 60, 40; `2:1:1`, `1.5:1` → share counts
+45. `10,20` → 10, 20
+46. No numbers → `[]`
+47. Total $95 vs "$90" → "Total $95.00 wasn't in your message, please check."
+48. Total and adjustment both in the message → no warnings
+49. Missing adjustment → warning naming the person
+50. Percent 60/40 from "60/40" → none; 70 → warning
+51. Shares from the message → none; a missing share count → warning
+52. Equal split: only the total and adjustments are checked
+53. Total the model added up from parts → warning (expected)
+54. levenshtein: kitten/sitting 3, identical 0, empty, case-insensitive
+55. "Aroon" vs "Arun" → CLOSE_NAME warning with suggestion Arun
+56. "Ana" vs "Arun" → none
+57. " arun " exact match → none
+58. "Mei"/"Meg" warns; "Al"/"Ed" doesn't; the longer name sets the threshold ("Lia"/"Lilia" warns, "Lia"/"Lino" doesn't)
+59. "Rob"/"Robert" warns via the prefix rule; "Ar"/"Arun" doesn't
+60. Exact match on one person beats a close match on another
+61. Several close matches → closest wins, ties in `people` order
+62. The payer name is checked too
+63. `me` is never suggested
+64. "José"/"Jose" warns
+65. Exact split: amounts in the message → none; a missing exact amount → warning
+66. Zero values (exact 0, 0%) aren't checked
+
+**review follow-ups (#67–#73)**
+67. `from`/`to` that aren't real YYYY-MM-DD dates (`2026-10`, `bad`, `2026-02-30`) → `RangeError`
+68. A malformed expense date (`2026-1-05`, `2026-13-01`, `abcd`, `2026-02-30`) → `RangeError` instead of looping forever
+69. An unknown expense category → `RangeError` naming the category
+70. Empty or whitespace names → no suggestion and no warning
+71. Typing me's display name ("Rahul") counts as exact, so there's no warning about "Rahim"; `me` is still never suggested
+72. "$90 dinner, 7:30pm" → [90, 7, 30]; a $90 total gives no warning and $95 still warns
+73. Settle-up error messages are in dollars (`$0.01`, `$1.005`)
+
+### Done when
+`npm test` and `npm run typecheck` pass. Then run `/review-step`, commit "Step 2: balances, settle-up, summary, guardrails", and stop for review.
 
 ## Verification
 - **Unit tests (vitest)**, run with `npm test -w server`:

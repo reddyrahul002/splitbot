@@ -80,11 +80,21 @@ export interface Settlement {
   date: string;
 }
 
+export type DraftWarningCode = 'AMOUNT_NOT_IN_MESSAGE' | 'CLOSE_NAME';
+
+/** A guardrail finding shown on a draft. Warnings never block a draft. */
+export interface DraftWarning {
+  code: DraftWarningCode;
+  message: string;
+  /** CLOSE_NAME: the typed `name` looks like existing `person` ("Use Arun"). */
+  suggestion?: { name: string; person: Person };
+}
+
 interface DraftBase {
   id: string;
   /** Names that don't exist yet; created only on Confirm. */
   newPeople: string[];
-  warnings: string[];
+  warnings: DraftWarning[];
 }
 
 export type Draft =
@@ -101,6 +111,26 @@ export interface Transfer {
   from: PersonId;
   to: PersonId;
   cents: number;
+}
+
+/** Spending for one bucket: one person's share and the group total. */
+export interface SpendRow {
+  myCents: number;
+  totalCents: number;
+}
+
+export interface CategorySpend extends SpendRow {
+  category: Category;
+}
+
+export interface MonthSpend extends SpendRow {
+  /** YYYY-MM. */
+  month: string;
+}
+
+export interface SpendingSummary extends SpendRow {
+  byCategory: CategorySpend[];
+  byMonth: MonthSpend[];
 }
 
 export interface ChatMessage {

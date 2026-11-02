@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PersonId, Share, SplitInput } from '@splitbot/shared';
 import { computeShares, SplitError, type SplitErrorCode } from '../src/domain/split';
+import { rng } from './helpers';
 
 const ME = 'me';
 const ARUN = 'arun';
@@ -358,17 +359,6 @@ describe('Step 1 review follow-ups', () => {
 });
 
 describe('invariants', () => {
-  /** mulberry32: small seeded PRNG so failures are reproducible. */
-  function rng(seed: number): () => number {
-    let a = seed;
-    return () => {
-      a = (a + 0x6d2b79f5) | 0;
-      let t = Math.imul(a ^ (a >>> 15), 1 | a);
-      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-  }
-
   it('#31 500 random splits always add up, are integers >= 0, and equal splits favour the payer by at most 1 cent', () => {
     const rand = rng(42);
     const int = (min: number, max: number) => min + Math.floor(rand() * (max - min + 1));

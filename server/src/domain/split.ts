@@ -1,7 +1,7 @@
 // The split engine: turns a SplitInput into integer-cent shares that always add up to the total.
 // Order of operations: validate → apply itemized adjustments → split the remainder by splitType.
 import { SPLIT_TYPES, type PersonId, type Share, type SplitInput } from '@splitbot/shared';
-import { formatCents } from './money';
+import { describeCents, formatCents } from './money';
 
 export type SplitErrorCode =
   | 'INVALID_TOTAL'
@@ -194,13 +194,6 @@ function splitValues(
     if (v === undefined) throw new SplitError('MISSING_SPLIT_VALUE', `"${p}" has no ${kind} value.`);
     return v;
   });
-}
-
-/** Dollars for error messages, even when the input isn't valid whole cents (100.5 → "$1.005"). */
-function describeCents(cents: number): string {
-  if (Number.isInteger(cents)) return formatCents(cents);
-  if (!Number.isFinite(cents)) return String(cents);
-  return `${cents < 0 ? '-' : ''}$${Math.abs(cents) / 100}`;
 }
 
 /**

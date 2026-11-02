@@ -148,11 +148,14 @@ Prerequisite: Step 0 is committed. Step 1 also adds the `workspaces` field to th
 ### Split engine rules
 - **Output:** one `Share` for every participant, in the order participants are listed, including shares of 0. All values are integer cents ≥0 and always add up exactly to `totalCents`.
 - **Order of operations:** validate, apply adjustments, then split the remainder by `splitType`.
-- **Leftover cents:** use the largest-remainder method. When people tie, the leftover cent goes to whoever comes first in the participant list. For equal splits that means the first `rem % n` people each get +1 cent.
-- **Payer:** the engine ignores who paid. Payer is an expense-level field, and the payer doesn't have to be a participant.
+- **Leftover cents:** use the largest-remainder method. Ties go to the payer first (if the payer is a participant), then in listed participant order. For equal splits that means the payer always gets the first extra cent. Shares are still returned in listed order.
+- **Payer:** `SplitInput.paidBy` is required and is used only for the tie-break. The payer doesn't have to be a participant; if they aren't, ties fall back to listed order. (Changed during Step 1 review: the AI picks the participant order, so listed-order alone wasn't predictable.)
 - **`exact`** values must add up to the full total. Adjustments are rejected with `exact`, because exact amounts are already itemized.
-- **Percent tolerance:** the sum must be within 0.01 of 100, so 33.33 + 33.33 + 33.34 passes.
-- **Error messages** are written in dollars (e.g. "Exact amounts add up to $87.00 but the total is $90.00 (off by $3.00)"), because they go back to the model.
+- **Percent tolerance:** the raw percentages must add up to within 0.01 of 100 (checked before any rounding), so 33.33 + 33.33 + 33.34 and 33.336 × 3 pass. 0% is allowed; negative → `INVALID_AMOUNT`.
+- **Shares** must be more than 0 with at most 3 decimal places → otherwise `INVALID_SHARES`.
+- **Values for another split type** (e.g. `percent` given with `equal`) → `SPLIT_VALUES_TYPE_MISMATCH`. An empty map counts as absent. Unknown split type → `INVALID_SPLIT_TYPE`.
+- **Exact 0** is allowed (a participant who owes nothing).
+- **Error messages** are written in dollars, including invalid inputs such as a total of `$1.005` (e.g. "Exact amounts add up to $87.00 but the total is $90.00 (off by $3.00)"), because they go back to the model.
 
 ### Test cases (written first)
 **money**
@@ -161,10 +164,10 @@ Prerequisite: Step 0 is committed. Step 1 also adds the `workspaces` field to th
 
 **equal**
 3. 9000 / 3 → 3000 ×3
-4. 1000 / 3 → 334, 333, 333 (the leftover cent goes to whoever is listed first)
+4. 1000 / 3, payer Mei → me 333, Arun 333, Mei 334 (the payer gets the leftover cent)
 5. 1 cent / 3 → 1, 0, 0
 6. A single participant gets the whole total
-7. Reordering the participants moves the leftover cent to whoever is now first (deterministic)
+7. Reordering the participants doesn't change the payer's extra cent; with 2 leftover cents (1001 / 3) the second goes to the first-listed non-payer
 
 **adjustments**
 8. The dinner example: 9000, Arun +1200 → me 2600, Arun 3800, Mei 2600
@@ -182,12 +185,12 @@ Prerequisite: Step 0 is committed. Step 1 also adds the `workspaces` field to th
 **percent**
 17. 60/40 of 180000 → 108000 / 72000
 18. 33.33/33.33/33.34 of 1000 → 333 / 333 / 334
-19. 50/50 of 101 → 51 / 50 (on a tie, the first-listed person gets the cent)
+19. 50/50 of 101, payer Arun (listed second) → 50 / 51 (on a tie, the payer gets the cent)
 20. Percentages adding up to 90 → `PERCENT_SUM_NOT_100`
 
 **shares**
 21. 2:1:1 of 1000 → 500 / 250 / 250
-22. 1:1:1 of 100 → 34 / 33 / 33
+22. 1:1:1 of 100, payer Mei → 33 / 33 / 34
 23. Zero or negative shares → `INVALID_SHARES`
 
 **validation**
@@ -200,7 +203,12 @@ Prerequisite: Step 0 is committed. Step 1 also adds the `workspaces` field to th
 30. A participant with no value for exact/percent/shares → `MISSING_SPLIT_VALUE`; a value given for a non-participant → `UNKNOWN_PERSON_IN_SPLIT_VALUES`
 
 **invariants**
-31. Seeded random loop of 500 cases (no extra dependency): shares always add up to the total, are all integers ≥0, and in equal splits no two shares differ by more than 1 cent
+31. Seeded random loop of 500 cases (no extra dependency): shares always add up to the total, are all integers ≥0, and in equal splits no two shares differ by more than 1 cent and a participating payer has the largest share
+
+**payer not a participant**
+32. 1000 among [Arun, Mei, Kai], payer me → 334 / 333 / 333 (falls back to listed order)
+
+**review follow-ups (#33–#47)**: `toCents` -0 → 0 and NaN/Infinity → RangeError; `formatCents` rejects non-integers; money error messages in dollars; raw-percent tolerance (33.336 × 3 accepted, 25.0049 × 4 rejected); 33.33 × 3 accepted / 33.32 × 3 rejected; `SPLIT_VALUES_TYPE_MISMATCH`; shares with > 3 decimals; 1.5:1 shares; payer not first + adjustment; unknown person / missing map for exact and percent; unknown split type; a 999,999,999,999-cent total split 7 ways; `constructor`/`toString` ids; a second seeded random loop (off-100 percentages, 3-decimal shares, totals up to 10¹³ cents).
 
 ### Done when
 `npm test` and `npm run typecheck` pass. Then commit "Step 1: shared types and split engine" and stop for `/review-step`.

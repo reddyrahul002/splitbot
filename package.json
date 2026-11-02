@@ -6,7 +6,12 @@
   "engines": {
     "node": ">=20"
   },
+  "workspaces": [
+    "shared",
+    "server"
+  ],
   "scripts": {
-    "test": "node -e \"console.log('No workspaces yet: real tests arrive in Step 1')\""
+    "test": "npm test -w server",
+    "typecheck": "npm run typecheck --workspaces --if-present"
   }
 }

@@ -54,6 +54,8 @@ _(Log mistakes as they happen: what it did, how it was caught, and the fix.)_
 - `/review-step` before each commit.
 - A manual end-to-end check (see Verification in PLAN.md).
 - The /review-step probe found an infinite loop on malformed dates even though all 120 tests passed. I added date validation and a regression test.
+- Mutation testing in Step 3 confirmed the tests catch broken confirm/restore, atomic writes and new-person id replacement. Known gap: a crash mid-write isn't tested because it needs killing the process mid-write; accepted for this build.
+
 
 ## What I'd do differently
 _(Fill in at the end.)_

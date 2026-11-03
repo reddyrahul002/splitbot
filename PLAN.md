@@ -22,7 +22,8 @@ splitbot/
   package.json            # workspaces: shared, server, client; "dev" runs both via concurrently
   shared/src/types.ts     # Person, Expense, Settlement, Draft, Balance, Transfer, ChatMessage, Category
   server/
-    src/index.ts          # entry point: dotenv, CORS, opens the store, listen
+    src/index.ts          # entry point: loads config, CORS, opens the store, listen
+    src/config.ts         # loads the repo-root .env (whatever the start folder); startup line without values
     src/app.ts            # createApp(deps): Express routes + JSON error handler (testable with supertest)
     src/store.ts          # JSON file store (data/db.json): in-memory cache, atomic write (tmp + rename), serialized write queue
     src/domain/split.ts   # computeShares(): equal | exact | percent | shares, plus itemized adjustments
@@ -338,7 +339,8 @@ Prerequisite: Step 2 is committed. `/api/chat` and Gemini wait for Step 4. Step 
 | `shared/src/types.ts` | `newPeople: Person[]`, `NEW_PERSON_PREFIX`, `ExpenseDraftInput`, `SettlementDraftInput`, `DraftRequest`, `DraftEdits`, `ConfirmResult`, `BalancesResponse`, `ApiError` |
 | `server/src/store.ts` | `openStore(path, { fs? })`: cache, `snapshot()` (deep copy), `update(fn)` (serialized queue; fn runs on a copy, tmp write + rename, cache updated only after the rename). Missing file → seed with `me` ("Me"); corrupt or wrong-shaped file → throws, never overwritten; a file without `me` gets it added. Path `server/data/db.json`, or `DB_PATH` |
 | `server/src/drafts.ts` | `createDraftStore({ ttlMs = 30 min, now })` (lazy expiry, sweep on put, no timers), `buildExpenseDraft`, `buildSettlementDraft`, `applyEdits`, `finalizeDraft`, `DraftError` |
-| `server/src/app.ts`, `server/src/index.ts` | `createApp({ store, drafts, today, now?, log? })` with zod-validated bodies; index.ts does dotenv, CORS (localhost origins) and `listen` |
+| `server/src/app.ts`, `server/src/index.ts` | `createApp({ store, drafts, today, now?, log? })` with zod-validated bodies; index.ts does config, CORS (localhost origins) and `listen` |
+| `server/src/config.ts`, `server/test/config.test.ts` | added after Step 3: `loadEnv()` reads `<repo root>/.env` with `quiet: true`; a relative `DB_PATH` resolves from the repo root |
 | `server/src/domain/guardrails.ts`, `summary.ts` | export `normalizeName` and `assertDate` (no logic change) |
 | `server/test/{store,drafts,api}.test.ts` | written first; confirmed to fail before the implementation existed |
 

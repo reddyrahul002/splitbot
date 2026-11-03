@@ -1,15 +1,17 @@
 // Server entry point: loads .env, opens the JSON store and starts the API.
-import 'dotenv/config';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 import cors from 'cors';
 import express from 'express';
 import { createApp } from './app';
+import { describeEnv, loadEnv, REPO_ROOT } from './config';
 import { createDraftStore } from './drafts';
 import { openStore } from './store';
 
-const serverRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const dbPath = process.env.DB_PATH ? resolve(process.env.DB_PATH) : resolve(serverRoot, 'data', 'db.json');
+// Load config before reading any env var.
+console.log(describeEnv(loadEnv()));
+
+// A relative DB_PATH is relative to the repo root, where .env lives.
+const dbPath = resolve(REPO_ROOT, process.env.DB_PATH || 'server/data/db.json');
 const port = Number(process.env.PORT ?? 3001);
 
 /** Today in the server's local time zone, as YYYY-MM-DD. */

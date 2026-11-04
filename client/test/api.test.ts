@@ -1,14 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  addGroupMember,
   ApiRequestError,
   confirmDraft,
   createDraft,
+  createGroup,
   deleteExpense,
   deleteSettlement,
   discardDraft,
   editDraft,
   getAccount,
   getExpenses,
+  getGroups,
   getPeople,
   getSettlements,
   getSettlePlan,
@@ -112,6 +115,36 @@ describe('expense and payment wrappers', () => {
     expect(err.status).toBe(404);
     expect(err.code).toBe('NOT_FOUND');
     expect(err.message).toBe('Expense not found.');
+  });
+});
+
+describe('group wrappers', () => {
+  const JSON_POST = { method: 'POST', headers: { 'Content-Type': 'application/json' } };
+
+  it('#131 getGroups asks /api/groups', async () => {
+    const fetchMock = stubFetch(json(200, []));
+    await expect(getGroups()).resolves.toEqual([]);
+    expect(fetchMock.mock.calls[0]).toEqual(['/api/groups', undefined]);
+  });
+
+  it('#132 createGroup posts the name', async () => {
+    const group = { id: 'g1', name: 'Trip', memberIds: ['me'] };
+    const fetchMock = stubFetch(json(201, group));
+    await expect(createGroup('Trip')).resolves.toEqual(group);
+    expect(fetchMock.mock.calls[0]).toEqual(['/api/groups', { ...JSON_POST, body: JSON.stringify({ name: 'Trip' }) }]);
+  });
+
+  it('#133 addGroupMember posts the person to an encoded group id', async () => {
+    const fetchMock = stubFetch(json(200, { id: 'a/b', name: 'Trip', memberIds: ['me', 'arun'] }));
+    await addGroupMember('a/b', 'arun');
+    expect(fetchMock.mock.calls[0]).toEqual(['/api/groups/a%2Fb/members', { ...JSON_POST, body: JSON.stringify({ personId: 'arun' }) }]);
+  });
+
+  it('#134 a duplicate name shows the server message word for word', async () => {
+    stubFetch(json(400, { error: { code: 'GROUP_EXISTS', message: 'There is already a group called Trip.' } }));
+    const err = await failure(() => createGroup('trip'));
+    expect(err.code).toBe('GROUP_EXISTS');
+    expect(err.message).toBe('There is already a group called Trip.');
   });
 });
 

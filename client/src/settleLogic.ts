@@ -19,8 +19,9 @@ export function savingsNote({ transfers, directDebtCount, paymentsSaved }: Settl
  * The draft request behind "Record payment". Drafts take names, and an unknown name would become a new person, so a
  * missing person gives null instead.
  */
-export function settlementRequest({ from, to, cents }: Transfer, people: Person[]): DraftRequest | null {
+export function settlementRequest({ from, to, cents }: Transfer, people: Person[], groupId?: string): DraftRequest | null {
   const payer = people.find((p) => p.id === from);
   const payee = people.find((p) => p.id === to);
-  return payer && payee ? { kind: 'settlement', from: payer.name, to: payee.name, cents } : null;
+  if (!payer || !payee) return null;
+  return { kind: 'settlement', from: payer.name, to: payee.name, cents, ...(groupId === undefined ? {} : { groupId }) };
 }

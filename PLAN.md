@@ -20,7 +20,7 @@ The repo is empty, so this is a new build.
 ```
 splitbot/
   package.json            # workspaces: shared, server, client; "dev" runs both via concurrently
-  shared/src/types.ts     # Person, Expense, Settlement, Draft, Balance, Transfer, ChatMessage, Category
+  shared/src/types.ts     # Person, Expense, Settlement, Group, Draft, Balance, Transfer, Account, SettlePlan, GroupSummary, ChatMessage, Category
   shared/src/money.ts     # toCents, formatCents, describeCents (moved from the server in Step 5, so the client converts the same way)
   server/
     src/index.ts          # entry point: loads config, CORS, opens the store, listen
@@ -37,9 +37,9 @@ splitbot/
     src/drafts.ts         # in-memory Map<draftId, Draft>, 30-min TTL
     test/*.test.ts        # vitest
   client/ (Vite + React + TS)
-    src/App.tsx           # three columns: AccountSummary (left) | Tabs: Smart settle up · Expenses · Charts (centre) | Chat (right)
+    src/App.tsx           # three columns: AccountSummary (left) | Tabs: Smart settle up · Expenses · Charts · Groups (centre) | Chat (right)
     src/useAppData.ts     # one refetch for every panel; the latest response wins
-    src/components/Chat.tsx, DraftCard.tsx, Markdown.tsx, AccountSummary.tsx, Tabs.tsx, SettleUp.tsx, Expenses.tsx, Charts.tsx
+    src/components/Chat.tsx, DraftCard.tsx, Markdown.tsx, AccountSummary.tsx, Tabs.tsx, SettleUp.tsx, Expenses.tsx, Charts.tsx, Groups.tsx
     src/api.ts            # fetch wrappers
     src/draftLogic.ts     # pure helpers for the chat and draft card (input checks, edit queue, history)
     src/markdown.ts       # bold, italic and lists for chat replies; plain data, never raw HTML
@@ -47,6 +47,7 @@ splitbot/
     src/history.ts        # pure helpers for Expenses: merging, filtering, row text
     src/chartData.ts      # pure helpers that shape server data for the charts; values stay in cents
     src/display.ts        # how money reads on screen: colour class, signed amounts, debt wording
+    src/groupLogic.ts     # pure helpers for groups: balance wording, who can be added, who a Confirm would add
     test/*.test.ts(x)     # vitest: pure logic, fetch wrappers, markdown rendering
   .env.example            # GEMINI_API_KEY, GEMINI_MODEL (default gemini-3.5-flash-lite, free tier; gemini-2.5-flash is closed to new keys)
 ```
@@ -54,8 +55,9 @@ Dependencies: express, cors, dotenv, @google/genai, zod, nanoid; vitest, tsx, co
 
 ## Data model (shared/types.ts)
 - `Person { id, name }`. A built-in person with id `me` represents the user. The agent resolves "I" and "me" to it. New names are created only when an expense is confirmed, and the draft card shows them as "new".
-- `Expense { id, description, category, date, totalCents, paidBy: personId, shares: {personId, cents}[], splitMeta, createdAt }`. Storing the computed shares makes balances simple sums.
-- `Settlement { id, from, to, cents, date }`. This records a payment, e.g. "Arun paid me back $20".
+- `Expense { id, description, category, date, totalCents, paidBy: personId, shares: {personId, cents}[], splitMeta, createdAt, groupId? }`. Storing the computed shares makes balances simple sums.
+- `Settlement { id, from, to, cents, date, groupId? }`. This records a payment, e.g. "Arun paid me back $20". With a `groupId` it reduces that group's balances; it counts toward the overall balance either way.
+- `Group { id, name, memberIds }`. Me is always a member. Stored in an optional `groups` field, so older files load unchanged.
 - `Draft = { kind: 'expense', expense } | { kind: 'settlement', settlement }` plus `id`, `newPeople: Person[]` (provisional `new:<name>` ids until Confirm, since Step 3) and `warnings: DraftWarning[]`, where `DraftWarning = { code, message, suggestion? }` (structured since Step 2, so the DraftCard can render "Use Arun").
 - Categories (fixed enum): Food & Drink, Groceries, Transport, Housing & Utilities, Entertainment, Travel, Shopping, Other.
 
@@ -108,15 +110,16 @@ Chat history lives in client state and is sent with each request; the server is 
 - `POST /api/drafts` creates an expense or settlement draft from name-based input (the same builder the agent's tools use). The manual form fallback and Settle up's "Record" use it, so every write goes through a draft and the app still works when Gemini is unavailable.
 - `PATCH /api/drafts/:id` applies edits and returns the recomputed draft without saving.
 - `POST /api/drafts/:id/confirm` (optionally with edited fields; shares are recomputed on the server) → saved record. `DELETE /api/drafts/:id` discards a draft.
-- `GET /api/people`, `GET /api/expenses`, `DELETE /api/expenses/:id`, `GET /api/settlements`, `DELETE /api/settlements/:id`, `GET /api/balances`, `GET /api/settlements/suggest`, `GET /api/settlements/plan`, `GET /api/account`, `GET /api/summary?from&to`
+- `GET /api/people`, `GET /api/expenses`, `DELETE /api/expenses/:id`, `GET /api/settlements`, `DELETE /api/settlements/:id`, `GET /api/balances`, `GET /api/settlements/suggest`, `GET /api/settlements/plan`, `GET /api/account`, `GET /api/summary?from&to`, `GET /api/groups` (each group with its own balances, account and plan), `POST /api/groups`, `POST /api/groups/:id/members`
 
 ## Frontend
 - **Chat**: message list, input box and example-prompt chips.
-- **DraftCard**: editable fields (description, amount, payer, category, date), a table of each person's share, and "new person" badges. Buttons: Confirm / Discard. Editing a field calls `PATCH /api/drafts/:id` to recompute the shares.
+- **DraftCard**: editable fields (description, amount, payer, category, date, and group when any exist), a table of each person's share, and "new person" badges. Buttons: Confirm / Discard. Editing a field calls `PATCH /api/drafts/:id` to recompute the shares.
 - **Account summary (left column)**: "You are owed $X from N people", "You owe $Y to M people", net balance, and each person's amount, with green for money owed to you and red for money you owe.
 - **Smart settle up (tab)**: overall totals and suggested transfers, each with a "Record payment" button that opens a settlement draft to confirm, plus a note on how many payments it saves.
 - **Expenses (tab)**: expenses and settlements, newest first, with category and person filters and a two-click delete.
 - **Charts (tab, Recharts)**: horizontal bar chart of spending by category, bar chart by month, and a toggle between "my share" and "group total" on those two; a balance-per-person bar chart. I'll load the `dataviz` skill before writing the chart code.
+- **Groups (tab)**: create a group, add existing people as members, and see each group's balances and its own Smart settle up. Anyone on a confirmed record in the group joins it, and the draft card says so first.
 
 After any confirm or delete, every panel refetches. Styling is plain CSS, with no UI library, to save time.
 
@@ -471,14 +474,14 @@ Prerequisite: Step 5 is committed. Each part ends with `npm test`, `npm run type
 - All money maths stays on the server; chart scale and tick rounding are display only. New domain code is limited to `directDebts` and `domain/account.ts`, which build on the existing functions.
 - **`directDebts`** wraps `pairwiseDebts` and cancels circular debts in a fixed order. Without it, recording a Smart settle-up payment between people leaves a false circle (me→Arun, Arun→Mei, Mei→me) after everyone's net is $0. Each person's net is unchanged, and zero nets give no debts. The account summary and the `get_balances` tool use it.
 - The UI doesn't call transfers "minimum", because `suggestSettlements` is greedy. The savings note appears only when the saving is above 0.
-- Delete uses a two-click confirm. Delete and group creation are logged exceptions to "every write goes through a draft".
+- Delete uses a two-click confirm. Delete, group creation and adding a group member are logged exceptions to "every write goes through a draft".
 
 ### Parts
 - **A: Layout + account summary.** Three columns, tab shell, `directDebts`, `accountSummary`, `GET /api/account`, `get_balances` switched to `directDebts`, single refetch in `useAppData`.
 - **B: Smart settle up.** Totals, transfers from `suggestSettlements`, "Record payment" (settlement draft + Confirm, one open at a time), payments-saved note. `settlePlan` in `domain/account.ts` and `GET /api/settlements/plan` supply the transfers and the saving, compared with the `directDebts` count.
 - **C: Expenses.** Expenses and settlements newest first, category and person filters, two-click delete. A category filter hides settlements, which have no category.
 - **D: Charts.** Recharts, after loading the `dataviz` skill: spending by category (horizontal bar) and by month (bar) with a "My share / Group total" toggle, and balance per person (bar). Values stay in cents; `formatCents` formats ticks and tooltips.
-- **E (the user decides after D): Groups.** `Group { id, name, memberIds }`, optional `groupId` on expenses and settlements (a group payment must reduce the group's balance), optional `groups` in the store so old files load unchanged, a Groups tab and a Group dropdown on the draft card. The agent gets no group support.
+- **E: Groups.** `groupSummary` in `domain/account.ts` reuses the balance and settle-up functions on one group's records. Members are chosen from existing people; a Confirm adds anyone on the record who isn't a member yet. `Group { id, name, memberIds }`, optional `groupId` on expenses and settlements (a group payment must reduce the group's balance), optional `groups` in the store so old files load unchanged, a Groups tab and a Group dropdown on the draft card. The agent gets no group support.
 
 ### Browser data (scratch `DB_PATH`)
 Dinner $90: I paid, split with Arun and Mei, Arun had $12 of drinks. Lunch $30: Mei paid, split with Arun. Gas $50: Kai paid, split with me. Expected: owed $64.00 from 2 people, owe $25.00 to 1 person, net +$39.00; Arun $38 and Mei $26 green, Kai $25 red.

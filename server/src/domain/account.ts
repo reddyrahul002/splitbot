@@ -1,7 +1,32 @@
 // The user's account summary and settle-up plan, built on the balance functions. All values are integer cents.
-import { ME_ID, type Account, type AccountPerson, type Expense, type Person, type Settlement, type SettlePlan } from '@splitbot/shared';
+import {
+  ME_ID,
+  type Account,
+  type AccountPerson,
+  type Expense,
+  type Group,
+  type GroupSummary,
+  type Person,
+  type Settlement,
+  type SettlePlan,
+} from '@splitbot/shared';
 import { computeBalances, directDebts } from './balances';
 import { suggestSettlements } from './settle';
+
+/** The same numbers as the overall view, from this group's records only. A payment with no group doesn't count here. */
+export function groupSummary(group: Group, people: Person[], expenses: Expense[], settlements: Settlement[]): GroupSummary {
+  const inGroup = expenses.filter((e) => e.groupId === group.id);
+  const paid = settlements.filter((s) => s.groupId === group.id);
+  const net = new Map(computeBalances(people, inGroup, paid).map((b) => [b.personId, b.netCents]));
+  const account = accountSummary(people, inGroup, paid);
+  return {
+    group,
+    balances: group.memberIds.map((personId) => ({ personId, netCents: net.get(personId) ?? 0 })),
+    account: { ...account, people: account.people.filter((p) => group.memberIds.includes(p.personId)) },
+    plan: settlePlan(people, inGroup, paid),
+    recordCount: inGroup.length + paid.length,
+  };
+}
 
 /** Suggested transfers and the payments they save over paying each direct debt. Greedy can be longer, so the floor is 0. */
 export function settlePlan(people: Person[], expenses: Expense[], settlements: Settlement[]): SettlePlan {

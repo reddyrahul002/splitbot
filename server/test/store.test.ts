@@ -135,4 +135,35 @@ describe('update', () => {
     expect(store.snapshot().people.slice(1).map((p) => p.id)).toEqual(ids);
     expect((await openStore(dbPath)).snapshot().people.slice(1).map((p) => p.id)).toEqual(ids);
   });
+
+  it('#128 a file from before groups loads unchanged, with no groups field added', async () => {
+    await mkdir(join(dir, 'data'));
+    const old = `${JSON.stringify({ version: 1, people: [{ id: 'me', name: 'Me' }], expenses: [], settlements: [] }, null, 2)}\n`;
+    await writeFile(dbPath, old);
+    const store = await openStore(dbPath);
+    expect(store.snapshot().groups).toBeUndefined();
+    expect(await readFile(dbPath, 'utf8')).toBe(old);
+  });
+
+  it('#129 groups and groupId on expenses and settlements survive a reopen', async () => {
+    const store = await openStore(dbPath);
+    await store.update((db) => {
+      db.people.push({ id: 'arun', name: 'Arun' });
+      db.groups = [{ id: 'g1', name: 'Trip', memberIds: ['me', 'arun'] }];
+      db.expenses.push({ ...expense('me', { me: 4500, arun: 4500 }), groupId: 'g1' });
+      db.settlements.push({ ...settlement('arun', 'me', 2000), groupId: 'g1' });
+    });
+    const reopened = (await openStore(dbPath)).snapshot();
+    expect(reopened.groups).toEqual([{ id: 'g1', name: 'Trip', memberIds: ['me', 'arun'] }]);
+    expect(reopened.expenses[0]!.groupId).toBe('g1');
+    expect(reopened.settlements[0]!.groupId).toBe('g1');
+  });
+
+  it('#130 a group with the wrong shape → rejects', async () => {
+    await mkdir(join(dir, 'data'));
+    const bad = JSON.stringify({ version: 1, people: [{ id: 'me', name: 'Me' }], expenses: [], settlements: [], groups: [{ id: 'g1' }] });
+    await writeFile(dbPath, bad);
+    await expect(openStore(dbPath)).rejects.toThrow(dbPath);
+    expect(await readFile(dbPath, 'utf8')).toBe(bad);
+  });
 });

@@ -1,8 +1,10 @@
 // Express app and REST routes. Every write goes through a draft: POST /api/drafts → (PATCH) → confirm.
 import express, { type ErrorRequestHandler, type Request, type Response } from 'express';
+import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import {
   CATEGORIES,
+  ME_ID,
   SPLIT_TYPES,
   type ApiError,
   type BalancesResponse,
@@ -11,15 +13,18 @@ import {
   type DraftEdits,
   type DraftRequest,
   type Expense,
+  type Group,
+  type GroupSummary,
   type Settlement,
 } from '@splitbot/shared';
 import { GeminiRequestError } from './agent/gemini';
-import { accountSummary, settlePlan } from './domain/account';
+import { accountSummary, groupSummary, settlePlan } from './domain/account';
 import { computeBalances, pairwiseDebts } from './domain/balances';
 import { suggestSettlements } from './domain/settle';
+import { normalizeName } from './domain/guardrails';
 import { SplitError } from './domain/split';
 import { spendingSummary } from './domain/summary';
-import { applyEdits, buildExpenseDraft, buildSettlementDraft, DraftError, finalizeDraft, type DraftStore } from './drafts';
+import { applyEdits, buildExpenseDraft, buildSettlementDraft, DraftError, finalizeDraft, joinGroup, type DraftStore } from './drafts';
 import type { Store } from './store';
 
 export interface AppDeps {
@@ -52,6 +57,7 @@ const ExpenseDraftSchema = z.strictObject({
   exact: valueMap.optional(),
   percent: valueMap.optional(),
   shares: valueMap.optional(),
+  groupId: z.string().min(1).optional(),
 });
 const SettlementDraftSchema = z.strictObject({
   kind: z.literal('settlement'),
@@ -59,6 +65,7 @@ const SettlementDraftSchema = z.strictObject({
   to: name,
   cents: z.number(),
   date: z.string().optional(),
+  groupId: z.string().min(1).optional(),
 });
 const DraftRequestSchema = z.discriminatedUnion('kind', [ExpenseDraftSchema, SettlementDraftSchema]);
 
@@ -70,7 +77,18 @@ const DraftEditsSchema = z.strictObject({
   paidBy: z.string().optional(),
   cents: z.number().optional(),
   replace: z.array(z.strictObject({ from: z.string(), to: z.string() })).optional(),
+  groupId: z.string().min(1).nullable().optional(),
 });
+
+const GroupCreateSchema = z.strictObject({
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(60)
+    .transform((name) => name.replace(/\s+/g, ' ')),
+});
+const GroupMemberSchema = z.strictObject({ personId: z.string().min(1) });
 
 const SummaryQuerySchema = z.object({ from: z.string().optional(), to: z.string().optional() });
 
@@ -95,6 +113,13 @@ class HttpError extends Error {
 
 const draftNotFound = () => new HttpError(404, 'DRAFT_NOT_FOUND', 'That draft no longer exists. It may have expired, been confirmed or been discarded.');
 const notFound = (what: string) => new HttpError(404, 'NOT_FOUND', `${what} not found.`);
+
+/** A draft can only point at a group that exists. */
+function findDraftGroup(groups: Group[] | undefined, id: string): Group {
+  const group = groups?.find((g) => g.id === id);
+  if (!group) throw new DraftError('UNKNOWN_GROUP', 'That group no longer exists. Pick another one.');
+  return group;
+}
 
 /** Newest first: by date, then by `tiebreak` (larger first). */
 function newestFirst<T extends { date: string }>(items: T[], tiebreak: (item: T) => string | number): T[] {
@@ -127,7 +152,8 @@ export function createApp(deps: AppDeps): express.Express {
 
   app.post('/api/drafts', (req, res) => {
     const body: DraftRequest = DraftRequestSchema.parse(req.body);
-    const people = store.snapshot().people;
+    const { people, groups } = store.snapshot();
+    if (body.groupId !== undefined) findDraftGroup(groups, body.groupId);
     const draft =
       body.kind === 'expense'
         ? buildExpenseDraft(body, people, { today: today() })
@@ -140,7 +166,9 @@ export function createApp(deps: AppDeps): express.Express {
     const draft = drafts.get(req.params.id);
     if (!draft) throw draftNotFound();
     const edits: DraftEdits = DraftEditsSchema.parse(req.body ?? {});
-    const edited = applyEdits(draft, edits, store.snapshot().people);
+    const { people, groups } = store.snapshot();
+    if (typeof edits.groupId === 'string') findDraftGroup(groups, edits.groupId);
+    const edited = applyEdits(draft, edits, people);
     if (!drafts.replace(edited)) throw draftNotFound();
     res.json(edited);
   });
@@ -157,6 +185,8 @@ export function createApp(deps: AppDeps): express.Express {
         db.people.push(...confirmed.createdPeople);
         if (confirmed.kind === 'expense') db.expenses.push(confirmed.expense);
         else db.settlements.push(confirmed.settlement);
+        const groupId = confirmed.kind === 'expense' ? confirmed.expense.groupId : confirmed.settlement.groupId;
+        if (groupId !== undefined) joinGroup(findDraftGroup(db.groups, groupId), confirmed);
         return confirmed;
       });
       res.json(result);
@@ -217,6 +247,45 @@ export function createApp(deps: AppDeps): express.Express {
   app.get('/api/account', (_req, res) => {
     const { people, expenses, settlements } = store.snapshot();
     res.json(accountSummary(people, expenses, settlements));
+  });
+
+  app.get('/api/groups', (_req, res) => {
+    const { people, expenses, settlements, groups = [] } = store.snapshot();
+    const body: GroupSummary[] = groups.map((group) => groupSummary(group, people, expenses, settlements));
+    res.json(body);
+  });
+
+  // Groups write directly, not through a draft: they move no money (logged in DECISIONS.md).
+  app.post('/api/groups', async (req, res) => {
+    const { name: groupName } = GroupCreateSchema.parse(req.body);
+    const group = await store.update((db) => {
+      const existing = db.groups?.find((g) => normalizeName(g.name) === normalizeName(groupName));
+      if (existing) throw new HttpError(400, 'GROUP_EXISTS', `There is already a group called ${existing.name}.`);
+      const created: Group = { id: nanoid(), name: groupName, memberIds: [ME_ID] };
+      db.groups = [...(db.groups ?? []), created];
+      return created;
+    });
+    send(res, 201, group);
+  });
+
+  app.post('/api/groups/:id/members', async (req, res) => {
+    const { personId } = GroupMemberSchema.parse(req.body);
+    const { people, groups } = store.snapshot();
+    const found = groups?.find((g) => g.id === req.params.id);
+    if (!found) throw notFound('Group');
+    if (!people.some((p) => p.id === personId)) throw new HttpError(400, 'UNKNOWN_PERSON', "That person doesn't exist.");
+    // Already a member needs no write.
+    if (found.memberIds.includes(personId)) {
+      res.json(found);
+      return;
+    }
+    const group = await store.update((db) => {
+      const current = db.groups?.find((g) => g.id === req.params.id);
+      if (!current) throw notFound('Group');
+      if (!current.memberIds.includes(personId)) current.memberIds.push(personId);
+      return current;
+    });
+    res.json(group);
   });
 
   app.get('/api/summary', (req: Request, res) => {

@@ -22,7 +22,7 @@ server/src/drafts.ts      # in-memory drafts with TTL
 server/src/domain/        # split, balances, settle, summary, account, guardrails (pure functions)
 server/src/agent/         # Gemini tools, loop, system prompt
 server/test/              # vitest
-client/src/               # React app: AccountSummary, Tabs (SettleUp, Expenses, Charts), Chat, DraftCard
+client/src/               # React app: AccountSummary, Tabs (SettleUp, Expenses, Charts, Groups), Chat, DraftCard
 client/test/              # vitest (pure logic and fetch wrappers)
 ```
 

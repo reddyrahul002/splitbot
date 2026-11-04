@@ -9,6 +9,8 @@ import type {
   DraftEdits,
   DraftRequest,
   Expense,
+  Group,
+  GroupSummary,
   Person,
   Settlement,
   SettlePlan,
@@ -69,6 +71,13 @@ export const getSettlePlan = () => request<SettlePlan>('/api/settlements/plan');
 export const createDraft = (body: DraftRequest) => request<Draft>('/api/drafts', withJson('POST', body));
 
 export const getSummary = () => request<SpendingSummary>('/api/summary');
+
+export const getGroups = () => request<GroupSummary[]>('/api/groups');
+
+export const createGroup = (name: string) => request<Group>('/api/groups', withJson('POST', { name }));
+
+export const addGroupMember = (groupId: string, personId: string) =>
+  request<Group>(`/api/groups/${encodeURIComponent(groupId)}/members`, withJson('POST', { personId }));
 
 export const getExpenses = () => request<Expense[]>('/api/expenses');
 

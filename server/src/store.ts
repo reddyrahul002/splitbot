@@ -2,13 +2,15 @@
 import * as nodeFs from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { z } from 'zod';
-import { CATEGORIES, ME_ID, SPLIT_TYPES, type Expense, type Person, type Settlement } from '@splitbot/shared';
+import { CATEGORIES, ME_ID, SPLIT_TYPES, type Expense, type Group, type Person, type Settlement } from '@splitbot/shared';
 
 export interface Db {
   version: 1;
   people: Person[];
   expenses: Expense[];
   settlements: Settlement[];
+  /** Absent until the first group is created, so older files load unchanged. */
+  groups?: Group[];
 }
 
 export interface Store {
@@ -44,13 +46,23 @@ const ExpenseSchema = z.object({
   shares: z.array(z.object({ personId: z.string(), cents: z.int() })),
   splitMeta: z.looseObject({ splitType: z.enum(SPLIT_TYPES) }),
   createdAt: z.string(),
+  groupId: z.string().optional(),
 });
-const SettlementSchema = z.object({ id: z.string(), from: z.string(), to: z.string(), cents: z.int(), date: z.string() });
+const SettlementSchema = z.object({
+  id: z.string(),
+  from: z.string(),
+  to: z.string(),
+  cents: z.int(),
+  date: z.string(),
+  groupId: z.string().optional(),
+});
+const GroupSchema = z.object({ id: z.string(), name: z.string(), memberIds: z.array(z.string()) });
 const DbSchema = z.object({
   version: z.literal(1),
   people: z.array(PersonSchema),
   expenses: z.array(ExpenseSchema),
   settlements: z.array(SettlementSchema),
+  groups: z.array(GroupSchema).optional(),
 });
 
 let tmpCounter = 0;

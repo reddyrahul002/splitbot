@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { CATEGORIES, formatCents, NEW_PERSON_PREFIX, type Category, type Draft, type DraftEdits, type Person } from '@splitbot/shared';
+import { CATEGORIES, formatCents, NEW_PERSON_PREFIX, type Category, type Draft, type DraftEdits, type Group, type Person } from '@splitbot/shared';
 import { ApiRequestError, confirmDraft, discardDraft, editDraft } from '../api';
 import { confirmIfValid, createEditQueue, inputProblem, parseDollars, replaceEditFor, type TypedInput } from '../draftLogic';
+import { joiningNames } from '../groupLogic';
 
 type Status = 'open' | 'saved' | 'discarded' | 'expired';
 
@@ -66,11 +67,13 @@ function Select(props: { label: string; value: string; disabled: boolean; onChan
 export function DraftCard(props: {
   draft: Draft;
   people: Person[];
+  /** Offered in a dropdown; with none, the dropdown is hidden. */
+  groups?: Group[];
   onSaved: () => void;
   /** Called after Discard, and offered as a Close button on an expired draft. Without it the card stays in place. */
   onClose?: () => void;
 }) {
-  const { draft: initial, people, onSaved, onClose } = props;
+  const { draft: initial, people, groups = [], onSaved, onClose } = props;
   const [draft, setDraft] = useState(initial);
   const [status, setStatus] = useState<Status>('open');
   const [error, setError] = useState<string | null>(null);
@@ -160,6 +163,19 @@ export function DraftCard(props: {
   if (status === 'discarded') return <div className="card muted">Draft discarded.</div>;
 
   const date = draft.kind === 'expense' ? draft.expense.date : draft.settlement.date;
+  const groupId = draft.kind === 'expense' ? draft.expense.groupId : draft.settlement.groupId;
+  const group = groups.find((g) => g.id === groupId);
+  const joining = group ? joiningNames(draft, group, known) : [];
+  const groupField = groups.length > 0 && (
+    <Select label="Group" value={groupId ?? ''} disabled={locked} onChange={(value) => edit({ groupId: value === '' ? null : value })}>
+      <option value="">No group</option>
+      {groups.map((g) => (
+        <option key={g.id} value={g.id}>
+          {g.name}
+        </option>
+      ))}
+    </Select>
+  );
 
   return (
     <div className={`card ${status}`}>
@@ -221,6 +237,7 @@ export function DraftCard(props: {
               ))}
             </Select>
             <Field label="Date" type="date" value={date} disabled={locked} onCommit={(text) => edit({ date: text })} />
+            {groupField}
           </div>
           <table className="shares">
             <thead>
@@ -268,8 +285,15 @@ export function DraftCard(props: {
               }}
             />
             <Field label="Date" type="date" value={date} disabled={locked} onCommit={(text) => edit({ date: text })} />
+            {groupField}
           </div>
         </>
+      )}
+
+      {status === 'open' && group && joining.length > 0 && (
+        <p className="payer-note">
+          Adds {joining.join(', ')} to {group.name}
+        </p>
       )}
 
       {(inputError ?? error) && (

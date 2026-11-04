@@ -330,6 +330,54 @@ button.danger {
   font-variant-numeric: tabular-nums;
 }
 
+.group-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.group-form .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.group-form button {
+  flex-shrink: 0;
+}
+
+.group-picker {
+  display: block;
+  margin-bottom: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #e7e5e4;
+}
+
+.group-section {
+  margin-bottom: 20px;
+}
+
+.group-section h2 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.group-members {
+  margin: 0 0 10px;
+  overflow-wrap: anywhere;
+}
+
+.group-balances {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.group-balances li {
+  padding: 6px 0;
+  border-top: 1px solid #e7e5e4;
+}
+
 .tab-list {
   display: flex;
   flex-wrap: wrap;

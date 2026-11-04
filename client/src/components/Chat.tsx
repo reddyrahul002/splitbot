@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { ChatMessage, Draft, Person } from '@splitbot/shared';
+import type { ChatMessage, Draft, Group, Person } from '@splitbot/shared';
 import { sendChat } from '../api';
 import { buildHistory, MAX_TEXT } from '../draftLogic';
 import { DraftCard } from './DraftCard';
@@ -17,7 +17,7 @@ type Item = { id: number; kind: 'user' | 'model' | 'error'; text: string; drafts
 const toMessages = (items: Item[]): ChatMessage[] =>
   items.flatMap((item) => (item.kind === 'error' ? [] : [{ role: item.kind, text: item.text }]));
 
-export function Chat({ people, onChange }: { people: Person[]; onChange: () => void }) {
+export function Chat({ people, groups, onChange }: { people: Person[]; groups?: Group[]; onChange: () => void }) {
   const [items, setItems] = useState<Item[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -72,7 +72,7 @@ export function Chat({ people, onChange }: { people: Person[]; onChange: () => v
                 {item.text}
               </p>
             )}
-            {item.drafts?.map((draft) => <DraftCard key={draft.id} draft={draft} people={people} onSaved={onChange} />)}
+            {item.drafts?.map((draft) => <DraftCard key={draft.id} draft={draft} people={people} groups={groups} onSaved={onChange} />)}
           </div>
         ))}
         {busy && <p className="bubble model thinking">Thinking…</p>}

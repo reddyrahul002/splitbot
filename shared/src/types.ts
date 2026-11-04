@@ -68,6 +68,7 @@ export interface Expense {
   splitMeta: SplitMeta;
   /** ISO timestamp. */
   createdAt: string;
+  groupId?: string;
 }
 
 /** A payment between two people, e.g. "Arun paid me back $20". */
@@ -78,6 +79,15 @@ export interface Settlement {
   cents: number;
   /** ISO date, YYYY-MM-DD. */
   date: string;
+  /** Set so a group payment reduces that group's balances. It counts toward the overall balance either way. */
+  groupId?: string;
+}
+
+/** People who share expenses, e.g. a trip. Me is always a member. */
+export interface Group {
+  id: string;
+  name: string;
+  memberIds: PersonId[];
 }
 
 export type DraftWarningCode = 'AMOUNT_NOT_IN_MESSAGE' | 'CLOSE_NAME' | 'NAME_RESPELLED';
@@ -120,6 +130,7 @@ export interface ExpenseDraftInput {
   exact?: Record<string, number>;
   percent?: Record<string, number>;
   shares?: Record<string, number>;
+  groupId?: string;
 }
 
 /** Settlement draft request: `from` paid `to`. */
@@ -129,6 +140,7 @@ export interface SettlementDraftInput {
   cents: number;
   /** YYYY-MM-DD; defaults to today. */
   date?: string;
+  groupId?: string;
 }
 
 export type DraftRequest = ({ kind: 'expense' } & ExpenseDraftInput) | ({ kind: 'settlement' } & SettlementDraftInput);
@@ -146,6 +158,8 @@ export interface DraftEdits {
   cents?: number;
   /** "Use Arun": swap a person in the draft for an existing person. */
   replace?: { from: PersonId; to: PersonId }[];
+  /** A group id, or null for no group. */
+  groupId?: string | null;
 }
 
 export type ConfirmResult =
@@ -198,6 +212,17 @@ export interface SettlePlan {
   directDebtCount: number;
   /** Never negative: 0 when the suggested list isn't shorter than the direct debts. */
   paymentsSaved: number;
+}
+
+/** GET /api/groups: one group's numbers, from its own records only. */
+export interface GroupSummary {
+  group: Group;
+  /** One per member, in member order: positive means they are owed within the group. */
+  balances: Balance[];
+  account: Account;
+  plan: SettlePlan;
+  /** How many expenses and payments belong to the group, to tell "nothing yet" from "all settled". */
+  recordCount: number;
 }
 
 /** Spending for one bucket: one person's share and the group total. */

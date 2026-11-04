@@ -79,6 +79,10 @@ describe('settlementRequest', () => {
     expect(settlementRequest({ from: 'arun', to: 'me', cents: 3900 }, PEOPLE)).toEqual({ kind: 'settlement', from: 'Arun', to: 'Me', cents: 3900 });
   });
 
+  it('#130 adds the group when one is given', () => {
+    expect(settlementRequest({ from: 'arun', to: 'me', cents: 3900 }, PEOPLE, 'g1')).toEqual({ kind: 'settlement', from: 'Arun', to: 'Me', cents: 3900, groupId: 'g1' });
+  });
+
   it('#71 is null if a person is missing, so a provisional name is never created by accident', () => {
     expect(settlementRequest({ from: 'gone', to: 'me', cents: 3900 }, PEOPLE)).toBeNull();
     expect(settlementRequest({ from: 'arun', to: 'gone', cents: 3900 }, PEOPLE)).toBeNull();

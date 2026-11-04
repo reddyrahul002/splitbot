@@ -10,6 +10,7 @@ import {
   type DraftWarning,
   type Expense,
   type ExpenseDraftInput,
+  type Group,
   type Person,
   type PersonId,
   type Settlement,
@@ -21,7 +22,7 @@ import { describeCents } from './domain/money';
 import { computeShares, SplitError } from './domain/split';
 import { assertDate } from './domain/summary';
 
-export type DraftErrorCode = 'SAME_PERSON' | 'UNKNOWN_PERSON' | 'INVALID_AMOUNT' | 'INVALID_DATE' | 'INVALID_NAME' | 'INVALID_EDIT';
+export type DraftErrorCode = 'SAME_PERSON' | 'UNKNOWN_PERSON' | 'UNKNOWN_GROUP' | 'INVALID_AMOUNT' | 'INVALID_DATE' | 'INVALID_NAME' | 'INVALID_EDIT';
 
 /** A draft that can't be built or edited. Like SplitError, the message is meant for the user (and the model). */
 export class DraftError extends Error {
@@ -198,6 +199,7 @@ export function buildExpenseDraft(input: ExpenseDraftInput, people: Person[], op
     shares: participants.map((personId) => ({ personId, cents: 0 })),
     splitMeta,
     createdAt: new Date().toISOString(),
+    ...(input.groupId === undefined ? {} : { groupId: input.groupId }),
   }, [...people, ...newPeople]);
 
   const warnings: DraftWarning[] = [
@@ -215,6 +217,7 @@ export function buildSettlementDraft(input: SettlementDraftInput, people: Person
     to: resolve(input.to),
     cents: checkSettlementCents(input.cents),
     date: checkDate(input.date ?? options.today),
+    ...(input.groupId === undefined ? {} : { groupId: input.groupId }),
   };
   if (settlement.from === settlement.to) {
     throw new DraftError('SAME_PERSON', `A payment needs two different people (got "${input.from.trim()}" twice).`);
@@ -247,6 +250,13 @@ function remapExpense(expense: Expense, map: (id: PersonId) => PersonId): Expens
 
 function remapSettlement(settlement: Settlement, map: (id: PersonId) => PersonId): Settlement {
   return { ...settlement, from: map(settlement.from), to: map(settlement.to) };
+}
+
+/** Applies a group edit: undefined keeps the group, null removes the field, and an id sets it. */
+function withGroup<T extends { groupId?: string }>(record: T, groupId: string | null | undefined): T {
+  if (groupId === undefined) return record;
+  const { groupId: _old, ...rest } = record;
+  return (groupId === null ? rest : { ...rest, groupId }) as T;
 }
 
 function draftPeople(draft: Draft): Set<PersonId> {
@@ -298,7 +308,7 @@ export function applyEdits(draft: Draft, edits: DraftEdits, people: Person[]): D
       totalCents: edits.totalCents ?? remapped.totalCents,
       paidBy: edits.paidBy ?? remapped.paidBy,
     }, [...people, ...draft.newPeople]);
-    next = { ...draft, expense, newPeople };
+    next = { ...draft, expense: withGroup(expense, edits.groupId), newPeople };
   } else {
     const settlement = {
       ...remapSettlement(draft.settlement, map),
@@ -306,7 +316,7 @@ export function applyEdits(draft: Draft, edits: DraftEdits, people: Person[]): D
       date: date ?? draft.settlement.date,
     };
     if (settlement.from === settlement.to) throw new DraftError('SAME_PERSON', 'A payment needs two different people.');
-    next = { ...draft, settlement, newPeople };
+    next = { ...draft, settlement: withGroup(settlement, edits.groupId), newPeople };
   }
 
   // A new person no longer in the draft (e.g. the payer was changed) must not be created on Confirm.
@@ -354,4 +364,15 @@ export function finalizeDraft(
     return { kind: 'expense', expense: { ...remapExpense(draft.expense, map), createdAt: options.now }, createdPeople };
   }
   return { kind: 'settlement', settlement: remapSettlement(draft.settlement, map), createdPeople };
+}
+
+/** Adds anyone on a confirmed record who isn't a member yet to the record's group. */
+export function joinGroup(group: Group, result: ConfirmResult): void {
+  const onRecord =
+    result.kind === 'expense'
+      ? [result.expense.paidBy, ...result.expense.shares.map((s) => s.personId)]
+      : [result.settlement.from, result.settlement.to];
+  for (const id of onRecord) {
+    if (!group.memberIds.includes(id)) group.memberIds.push(id);
+  }
 }

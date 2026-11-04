@@ -9,6 +9,7 @@ import { Groups } from './components/Groups';
 import { SettleUp } from './components/SettleUp';
 import { Tabs, type Tab } from './components/Tabs';
 import { ToastProvider, useToast } from './components/Toast';
+import { loadErrorToast } from './toastLogic';
 import { useAppData } from './useAppData';
 import { useTheme } from './useTheme';
 
@@ -19,9 +20,10 @@ function Dashboard() {
   const groupList = groups?.map((s) => s.group);
   const openChat = useCallback(() => document.getElementById('chat-input')?.focus(), []);
 
+  const failedRefresh = loadErrorToast(error, account !== null);
   useEffect(() => {
-    if (error) toast('error', error);
-  }, [error, toast]);
+    if (failedRefresh) toast('error', failedRefresh);
+  }, [failedRefresh, toast]);
 
   const tabs: Tab[] = [
     { id: 'settle', label: 'Settle up', content: <SettleUp account={account} plan={plan} people={people} error={error} onChange={refresh} groups={groupList} /> },

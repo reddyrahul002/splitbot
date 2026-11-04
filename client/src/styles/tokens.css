@@ -123,6 +123,7 @@
   --target: 44px;
   --motion-fast: 150ms;
   --motion-slow: 250ms;
+  --motion-flash: 600ms;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 

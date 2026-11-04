@@ -1,4 +1,5 @@
 import { useState, type KeyboardEvent, type ReactNode } from 'react';
+import { withViewTransition } from '../motion';
 
 export interface Tab {
   id: string;
@@ -13,8 +14,11 @@ export function Tabs({ tabs, activeId, onChange }: { tabs: Tab[]; activeId?: str
   const active = tabs.find((tab) => tab.id === currentId);
 
   function select(id: string) {
-    setOwnId(id);
-    onChange?.(id);
+    if (id === currentId) return;
+    withViewTransition(() => {
+      setOwnId(id);
+      onChange?.(id);
+    });
   }
 
   function onKeyDown(event: KeyboardEvent, index: number) {

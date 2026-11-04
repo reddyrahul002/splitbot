@@ -5,13 +5,17 @@ import { createDraft } from '../api';
 import { useOpenChat } from '../chatOpener';
 import { oweTone, owedTone, signedCents, tone } from '../display';
 import { savingsNote, settlementRequest, transferLabel } from '../settleLogic';
+import { useExitingItems } from '../useExitingItems';
 import { DraftCard } from './DraftCard';
 import { EmptyState } from './EmptyState';
+import { FlashAmount } from './FlashAmount';
 import { Skeleton } from './Skeleton';
 import { useToast } from './Toast';
 import { TransferAvatars } from './TransferAvatars';
 
 const rowTone = ({ from, to }: Transfer) => (to === ME_ID ? 'owes-me' : from === ME_ID ? 'i-owe' : 'settled');
+const transferKey = ({ from, to }: Transfer) => `${from}>${to}`;
+const NO_TRANSFERS: Transfer[] = [];
 
 export function SettleUp(props: {
   account: Account | null;
@@ -33,6 +37,7 @@ export function SettleUp(props: {
   const [recordError, setRecordError] = useState<string | null>(null);
   const openChat = useOpenChat();
   const toast = useToast();
+  const transferRows = useExitingItems(plan?.transfers ?? NO_TRANSFERS, transferKey);
 
   const nameOf = (id: string) => people.find((p) => p.id === id)?.name ?? 'Unknown';
 
@@ -75,13 +80,13 @@ export function SettleUp(props: {
     <div className="settle-up">
       <div className="totals">
         <p>
-          <span>You are owed</span> <strong className={owedTone(account.owedCents)}>{formatCents(account.owedCents)}</strong>
+          <span>You are owed</span> <FlashAmount value={account.owedCents} className={owedTone(account.owedCents)}>{formatCents(account.owedCents)}</FlashAmount>
         </p>
         <p>
-          <span>You owe</span> <strong className={oweTone(account.oweCents)}>{formatCents(account.oweCents)}</strong>
+          <span>You owe</span> <FlashAmount value={account.oweCents} className={oweTone(account.oweCents)}>{formatCents(account.oweCents)}</FlashAmount>
         </p>
         <p className={tone(account.netCents)}>
-          <span>Net balance</span> <strong>{signedCents(account.netCents)}</strong>
+          <span>Net balance</span> <FlashAmount value={account.netCents}>{signedCents(account.netCents)}</FlashAmount>
         </p>
       </div>
 
@@ -105,7 +110,7 @@ export function SettleUp(props: {
         />
       )}
 
-      {plan.transfers.length === 0 ? (
+      {transferRows.length === 0 ? (
         nothingYet ? (
           <EmptyState icon={Receipt} title="Nothing to settle yet." body={nothingYet} action={{ label: 'Add an expense', onClick: openChat }} />
         ) : (
@@ -114,11 +119,11 @@ export function SettleUp(props: {
       ) : (
         <>
           <ul className="transfers">
-            {plan.transfers.map((transfer) => (
-              <li key={`${transfer.from}>${transfer.to}`} className={`transfer-row ${rowTone(transfer)}`}>
+            {transferRows.map(({ item: transfer, exiting }) => (
+              <li key={transferKey(transfer)} className={`transfer-row ${rowTone(transfer)}${exiting ? ' exiting' : ''}`} inert={exiting}>
                 <TransferAvatars from={transfer.from} to={transfer.to} people={people} />
                 <span className="transfer-text">
-                  <span>{transferLabel(transfer, nameOf)}</span> <strong>{formatCents(transfer.cents)}</strong>
+                  <span>{transferLabel(transfer, nameOf)}</span> <FlashAmount value={transfer.cents}>{formatCents(transfer.cents)}</FlashAmount>
                 </span>
                 <button type="button" className="action" disabled={creating || draft !== null} onClick={() => record(transfer)}>
                   Record payment

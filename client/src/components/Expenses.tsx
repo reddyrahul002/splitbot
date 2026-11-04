@@ -5,6 +5,7 @@ import { ApiRequestError, deleteExpense, deleteSettlement } from '../api';
 import { useOpenChat } from '../chatOpener';
 import { shortDate } from '../display';
 import { expenseDetail, filterHistory, mergeHistory, settlementText, type HistoryItem } from '../history';
+import { useExitingItems } from '../useExitingItems';
 import { CategoryChip } from './CategoryChip';
 import { EmptyState } from './EmptyState';
 import { Skeleton } from './Skeleton';
@@ -21,11 +22,13 @@ export function HistoryRow(props: {
   groups?: Group[];
   confirming: boolean;
   busy: boolean;
+  /** Deleted, and animating out. */
+  exiting?: boolean;
   onAsk: () => void;
   onCancel: () => void;
   onDelete: () => void;
 }) {
-  const { item, people, groups = [], confirming, busy, onAsk, onCancel, onDelete } = props;
+  const { item, people, groups = [], confirming, busy, exiting = false, onAsk, onCancel, onDelete } = props;
   const nameOf = (id: string) => people.find((p) => p.id === id)?.name ?? 'Unknown';
   const record = item.kind === 'expense' ? item.expense : item.settlement;
   const title = item.kind === 'expense' ? item.expense.description : settlementText(item.settlement, nameOf);
@@ -34,7 +37,7 @@ export function HistoryRow(props: {
   const groupName = groups.find((g) => g.id === record.groupId)?.name;
 
   return (
-    <li className="history-row">
+    <li className={exiting ? 'history-row exiting' : 'history-row'} inert={exiting}>
       {item.kind === 'expense' ? <CategoryChip category={item.expense.category} iconOnly /> : <TransferAvatars from={item.settlement.from} to={item.settlement.to} people={people} />}
       <div className="history-main">
         <div className="history-title">
@@ -89,6 +92,9 @@ export function Expenses(props: {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const openChat = useOpenChat();
   const toast = useToast();
+  const all = mergeHistory(expenses ?? [], settlements ?? []);
+  const shown = filterHistory(all, { category: category || undefined, personId: personId || undefined });
+  const rows = useExitingItems(shown, keyOf, all);
 
   if (!expenses || !settlements) {
     return error ? (
@@ -123,9 +129,6 @@ export function Expenses(props: {
     }
   }
 
-  const all = mergeHistory(expenses, settlements);
-  const shown = filterHistory(all, { category: category || undefined, personId: personId || undefined });
-
   return (
     <div className="expenses">
       <div className="filters">
@@ -159,9 +162,9 @@ export function Expenses(props: {
         </p>
       )}
 
-      {all.length === 0 ? (
+      {rows.length === 0 && all.length === 0 ? (
         <EmptyState icon={ReceiptText} title="No expenses yet." body="Add one in the chat." action={{ label: 'Add an expense', onClick: openChat }} />
-      ) : shown.length === 0 ? (
+      ) : rows.length === 0 ? (
         <EmptyState
           icon={SearchX}
           title="Nothing matches these filters."
@@ -175,7 +178,7 @@ export function Expenses(props: {
         />
       ) : (
         <ul className="history">
-          {shown.map((item) => (
+          {rows.map(({ item, exiting }) => (
             <HistoryRow
               key={keyOf(item)}
               item={item}
@@ -183,6 +186,7 @@ export function Expenses(props: {
               groups={groups}
               confirming={confirmingKey === keyOf(item)}
               busy={busy}
+              exiting={exiting}
               onAsk={() => setConfirmingKey(keyOf(item))}
               onCancel={() => setConfirmingKey(null)}
               onDelete={() => remove(item)}

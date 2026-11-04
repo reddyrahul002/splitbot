@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { CATEGORIES, formatCents, NEW_PERSON_PREFIX, type Category, type Draft, type DraftEdits, type Group, type Person } from '@splitbot/shared';
+import { Check, CircleAlert, TriangleAlert } from 'lucide-react';
+import { CATEGORIES, formatCents, ME_ID, NEW_PERSON_PREFIX, type Category, type Draft, type DraftEdits, type Group, type Person } from '@splitbot/shared';
 import { ApiRequestError, confirmDraft, discardDraft, editDraft } from '../api';
 import { confirmIfValid, createEditQueue, inputProblem, parseDollars, replaceEditFor, type TypedInput } from '../draftLogic';
 import { joiningNames } from '../groupLogic';
+import { DraftHeader, DraftSummary, ShareRow, type DraftStatus } from './DraftParts';
 import { useToast } from './Toast';
-
-type Status = 'open' | 'saved' | 'discarded' | 'expired';
+import { TransferAvatars } from './TransferAvatars';
 
 /**
  * A text-like input that commits on blur or Enter. `onCommit` resolving to false puts the last good value back. Text that
@@ -76,7 +77,7 @@ export function DraftCard(props: {
 }) {
   const { draft: initial, people, groups = [], onSaved, onClose } = props;
   const [draft, setDraft] = useState(initial);
-  const [status, setStatus] = useState<Status>('open');
+  const [status, setStatus] = useState<DraftStatus>('open');
   const [error, setError] = useState<string | null>(null);
   const [inputError, setInputError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
@@ -184,16 +185,16 @@ export function DraftCard(props: {
 
   return (
     <div className={`card ${status}`}>
-      <div className="card-title">
-        {draft.kind === 'expense' ? 'Expense draft' : 'Payment draft'}
-        {status === 'saved' && <span className="badge saved">Saved</span>}
-      </div>
+      <DraftHeader kind={draft.kind} status={status} />
+
+      {status === 'saved' && <DraftSummary draft={draft} people={known} nameOf={nameOf} groupName={group?.name} />}
 
       {status === 'open' &&
         draft.warnings.map((warning) => {
           const useSuggestion = replaceEditFor(draft, warning);
           return (
             <div key={`${warning.code}:${warning.message}`} className="warning" role="status">
+              <TriangleAlert aria-hidden="true" />
               <span>{warning.message}</span>
               {useSuggestion && warning.suggestion && (
                 <button type="button" disabled={locked} onClick={() => edit(useSuggestion)}>
@@ -253,13 +254,7 @@ export function DraftCard(props: {
             </thead>
             <tbody>
               {draft.expense.shares.map((share) => (
-                <tr key={share.personId}>
-                  <td>
-                    {nameOf(share.personId)}
-                    {isNew(share.personId) && <span className="badge new">new</span>}
-                  </td>
-                  <td>{formatCents(share.cents)}</td>
-                </tr>
+                <ShareRow key={share.personId} personId={share.personId} name={nameOf(share.personId)} cents={share.cents} isNew={isNew(share.personId)} />
               ))}
             </tbody>
           </table>
@@ -272,11 +267,16 @@ export function DraftCard(props: {
         </>
       ) : (
         <>
-          <p className="transfer">
-            {nameOf(draft.settlement.from)}
-            {isNew(draft.settlement.from) && <span className="badge new">new</span>} paid {nameOf(draft.settlement.to)}
-            {isNew(draft.settlement.to) && <span className="badge new">new</span>}
-          </p>
+          {status !== 'saved' && (
+            <div className="transfer">
+              <TransferAvatars from={draft.settlement.from} to={draft.settlement.to} people={known} />
+              <p>
+                {draft.settlement.from === ME_ID ? 'You' : nameOf(draft.settlement.from)}
+                {isNew(draft.settlement.from) && <span className="badge new">new</span>} paid {draft.settlement.to === ME_ID ? 'you' : nameOf(draft.settlement.to)}
+                {isNew(draft.settlement.to) && <span className="badge new">new</span>}
+              </p>
+            </div>
+          )}
           <div className="fields">
             <Field
               label="Amount"
@@ -303,16 +303,18 @@ export function DraftCard(props: {
 
       {(inputError ?? error) && (
         <p className="card-error" role="alert">
-          {inputError ?? error}
+          <CircleAlert aria-hidden="true" />
+          <span>{inputError ?? error}</span>
         </p>
       )}
 
       {status === 'open' && (
         <div className="actions">
-          <button type="button" className="primary" disabled={finishing} onClick={confirm}>
+          <button type="button" className="primary with-icon" disabled={finishing} onClick={confirm}>
+            <Check aria-hidden="true" />
             Confirm
           </button>
-          <button type="button" disabled={finishing} onClick={discard}>
+          <button type="button" className="ghost" disabled={finishing} onClick={discard}>
             Discard
           </button>
         </div>

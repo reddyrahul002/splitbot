@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { SendHorizontal } from 'lucide-react';
 import type { ChatMessage, Draft, Group, Person } from '@splitbot/shared';
 import { sendChat } from '../api';
 import { buildHistory, MAX_TEXT } from '../draftLogic';
+import { BotAvatar, ChatBubble } from './ChatParts';
 import { DraftCard } from './DraftCard';
-import { Markdown } from './Markdown';
+import { TypingIndicator } from './TypingIndicator';
 
 const EXAMPLES = [
   'Dinner $90, I paid, split with Arun and Mei, Arun had $12 of drinks',
@@ -59,35 +61,37 @@ export function Chat({ people, groups, onChange }: { people: Person[]; groups?: 
 
   return (
     <section className="chat">
+      <header className="chat-header">
+        <BotAvatar />
+        <div>
+          <h2>Ask SplitBot</h2>
+          <p>Nothing saves until you confirm.</p>
+        </div>
+      </header>
       <div className="messages">
-        {items.length === 0 && <p className="hint">Type an expense or a question, or start from an example below.</p>}
+        {items.length === 0 && (
+          <div className="chat-welcome">
+            <BotAvatar large />
+            <p className="hint">Type an expense or a question, or start from an example below.</p>
+            <div className="chips">
+              {EXAMPLES.map((example) => (
+                <button key={example} type="button" className="chip" onClick={() => setInput(example)}>
+                  {example}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {items.map((item) => (
           <div key={item.id} className="item">
-            {item.kind === 'model' ? (
-              <div className="bubble model">
-                <Markdown text={item.text} />
-              </div>
-            ) : (
-              <p className={`bubble ${item.kind}`} role={item.kind === 'error' ? 'alert' : undefined}>
-                {item.text}
-              </p>
-            )}
+            <ChatBubble kind={item.kind} text={item.text} />
             {item.drafts?.map((draft) => <DraftCard key={draft.id} draft={draft} people={people} groups={groups} onSaved={onChange} />)}
           </div>
         ))}
-        {busy && <p className="bubble model thinking">Thinking…</p>}
+        {busy && <TypingIndicator />}
         <div ref={endRef} />
       </div>
 
-      {items.length === 0 && (
-        <div className="chips">
-          {EXAMPLES.map((example) => (
-            <button key={example} type="button" className="chip" onClick={() => setInput(example)}>
-              {example}
-            </button>
-          ))}
-        </div>
-      )}
       <form className="composer" onSubmit={send}>
         <input
           id="chat-input"
@@ -95,11 +99,12 @@ export function Chat({ people, groups, onChange }: { people: Person[]; groups?: 
           value={input}
           maxLength={MAX_TEXT}
           disabled={busy}
-          placeholder="Dinner $90, I paid, split with Arun and Mei…"
+          placeholder="Type an expense or a question…"
           aria-label="Message"
           onChange={(e) => setInput(e.target.value)}
         />
-        <button type="submit" disabled={busy || !input.trim()}>
+        <button type="submit" className="with-icon" disabled={busy || !input.trim()}>
+          <SendHorizontal aria-hidden="true" />
           Send
         </button>
       </form>

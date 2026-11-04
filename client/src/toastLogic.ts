@@ -16,3 +16,9 @@ export function addToast(list: ToastItem[], toast: ToastItem): ToastItem[] {
 }
 
 export const removeToast = (list: ToastItem[], id: number) => list.filter((t) => t.id !== id);
+
+/**
+ * The toast for a failed data load, if it needs one. Before any data the panels show the error themselves; after that
+ * they keep the old numbers on screen, so the toast says why they may be stale.
+ */
+export const loadErrorToast = (error: string | null, hasData: boolean) => (error && hasData ? error : null);

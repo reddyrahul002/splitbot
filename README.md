@@ -54,7 +54,7 @@ npm run eval -w server -- 2 7 --repeat 3     # chosen cases, 3 times each, to se
 - **Agent (`server/src/agent/`):** a Gemini function-calling loop, capped at 5 tool calls per message. It asks a question when something is unclear, and guardrails check the model's output before a draft reaches you.
 - **Money logic (`server/src/domain/`):** pure functions compute every share, balance and transfer in integer cents. The model never does this arithmetic.
 - **Writes:** tools create in-memory drafts with a 30-minute expiry, and an expense or payment is saved only when you click Confirm. Data is stored in one JSON file with atomic writes through a queue, or in MongoDB with one transaction per save. Either way, routes read an in-memory cache that changes only after a write succeeds.
-- **Client (`client/src/`):** three columns: account summary, tabs (Smart settle up, Expenses, Charts, Groups) and chat. The Vite proxy forwards `/api` to the server, and the Gemini key stays on the server.
+- **Client (`client/src/`):** account summary, tabs (Settle up, Expenses, Charts, Groups) and chat, as three columns on desktop, two with a chat drawer on tablets, and one with a bottom tab bar on phones. The Vite proxy forwards `/api` to the server, and the Gemini key stays on the server.
 
 ## Key decisions
 [DECISIONS.md](DECISIONS.md) starts with a [summary](DECISIONS.md#summary) of the main decisions and of where the AI got things wrong, followed by the full log. The main decisions are:

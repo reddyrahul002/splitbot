@@ -138,9 +138,14 @@ export function SettleUp(props: {
             </p>
           )}
           <p className="hint">
-            {groupId === undefined
-              ? 'These payments simplify across everyone, so amounts can differ from the direct debts on the left.'
-              : 'These payments simplify across this group, so amounts can differ from who paid for what.'}
+            {groupId === undefined ? (
+              <>
+                These payments simplify across everyone, so amounts can differ from the direct debts <span className="when-side">on the left</span>
+                <span className="when-stacked">above</span>.
+              </>
+            ) : (
+              'These payments simplify across this group, so amounts can differ from who paid for what.'
+            )}
           </p>
           {groupId === undefined && groups.length > 0 && (
             <p className="hint">If this payment belongs to a group, pick it on the card, or record it in the Groups tab.</p>

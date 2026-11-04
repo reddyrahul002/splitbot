@@ -1,10 +1,12 @@
 import { useState, type ReactNode } from 'react';
-import { ChartColumn, ChartPie, CircleCheck } from 'lucide-react';
+import { ChartColumn, ChartPie, ChevronRight, CircleCheck } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { formatCents, type Account, type Person, type SpendingSummary } from '@splitbot/shared';
-import { axisLabel, balanceDomain, balanceRows, categoryRows, monthRows, shortName, spendTotal, type ChartRow, type SpendMode } from '../chartData';
+import { formatCents, type Account, type Category, type Person, type SpendingSummary } from '@splitbot/shared';
+import { categoryChartColor } from '../categoryMeta';
+import { axisLabel, balanceDomain, balanceRows, categoryRows, chartSizes, monthRows, shortName, spendTotal, type ChartRow, type SpendMode } from '../chartData';
 import { useOpenChat } from '../chatOpener';
 import { debtText, signedCents } from '../display';
+import { useMediaQuery } from '../useMediaQuery';
 import { EmptyState } from './EmptyState';
 import { Skeleton } from './Skeleton';
 
@@ -19,6 +21,7 @@ const GRID = 'var(--chart-grid)';
 const BASELINE = 'var(--chart-baseline)';
 const HOVER = 'var(--chart-hover)';
 
+const NARROW = '(max-width: 1023px)';
 const BAR_SIZE = 24;
 const ROW_HEIGHT = 40;
 const TICK = { fill: AXIS_INK, fontSize: 13 };
@@ -40,13 +43,18 @@ function ChartTip(props: { active?: boolean; payload?: readonly { payload?: Char
 const centsTip = (row: ChartRow) => formatCents(row.cents);
 
 function CategoryChart({ rows }: { rows: ChartRow[] }) {
+  const { categoryAxis, categoryRight } = chartSizes(useMediaQuery(NARROW));
   return (
     <ResponsiveContainer width="100%" height={horizontalHeight(rows)}>
-      <BarChart data={rows} layout="vertical" margin={{ top: 8, right: 100, bottom: 8, left: 0 }}>
+      <BarChart data={rows} layout="vertical" margin={{ top: 8, right: categoryRight, bottom: 8, left: 0 }}>
         <XAxis type="number" hide domain={[0, 'auto']} />
-        <YAxis type="category" dataKey="label" width={140} tick={TICK} tickLine={false} axisLine={{ stroke: BASELINE }} />
+        <YAxis type="category" dataKey="label" width={categoryAxis} tick={TICK} tickLine={false} axisLine={{ stroke: BASELINE }} />
         <Tooltip cursor={{ fill: HOVER }} content={(tip) => <ChartTip active={tip.active} payload={tip.payload} format={centsTip} />} />
-        <Bar dataKey="cents" fill={SPEND} barSize={BAR_SIZE} radius={[0, 4, 4, 0]} isAnimationActive={false}>
+        <Bar dataKey="cents" barSize={BAR_SIZE} radius={[0, 4, 4, 0]} isAnimationActive={false}>
+          {/* Colour follows the category, never its rank. The axis label and the value say which is which. */}
+          {rows.map((row) => (
+            <Cell key={row.label} fill={categoryChartColor(row.label as Category)} />
+          ))}
           <LabelList dataKey="cents" position="right" style={LABEL} formatter={(v) => formatCents(Number(v))} />
         </Bar>
       </BarChart>
@@ -60,7 +68,7 @@ function MonthChart({ rows }: { rows: ChartRow[] }) {
       <BarChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
         <CartesianGrid vertical={false} stroke={GRID} />
         <XAxis dataKey="label" tick={TICK} tickLine={false} axisLine={{ stroke: BASELINE }} />
-        <YAxis width={64} allowDecimals={false} tick={TICK} tickLine={false} axisLine={false} tickFormatter={axisLabel} />
+        <YAxis width="auto" allowDecimals={false} tick={TICK} tickLine={false} axisLine={false} tickFormatter={axisLabel} />
         <Tooltip cursor={{ fill: HOVER }} content={(tip) => <ChartTip active={tip.active} payload={tip.payload} format={centsTip} />} />
         <Bar dataKey="cents" fill={SPEND} barSize={BAR_SIZE} radius={[4, 4, 0, 0]} isAnimationActive={false} />
       </BarChart>
@@ -69,13 +77,15 @@ function MonthChart({ rows }: { rows: ChartRow[] }) {
 }
 
 function BalanceChart({ rows }: { rows: ChartRow[] }) {
+  const { balanceAxis } = chartSizes(useMediaQuery(NARROW));
   return (
     <ResponsiveContainer width="100%" height={horizontalHeight(rows)}>
       <BarChart data={rows} layout="vertical" margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
         <XAxis type="number" hide domain={balanceDomain(rows)} />
-        <YAxis type="category" dataKey="label" width={110} tick={TICK} tickLine={false} axisLine={false} tickFormatter={shortName} />
+        <YAxis type="category" dataKey="label" width={balanceAxis} tick={TICK} tickLine={false} axisLine={false} tickFormatter={shortName} />
         <ReferenceLine x={0} stroke={BASELINE} />
         <Tooltip cursor={{ fill: HOVER }} content={(tip) => <ChartTip active={tip.active} payload={tip.payload} format={(row) => debtText(row.cents)} />} />
+        {/* Recharts measures corners from each bar's start, so this rounds the far end whichever way a bar runs. */}
         <Bar dataKey="cents" barSize={BAR_SIZE} radius={[0, 4, 4, 0]} isAnimationActive={false}>
           {rows.map((row) => (
             <Cell key={row.label} fill={row.cents > 0 ? OWES_ME : I_OWE} />
@@ -95,7 +105,10 @@ function ChartBlock(props: { title: string; note?: string; headers: [string, str
       {note && <p className="hint">{note}</p>}
       {children}
       <details className="chart-table">
-        <summary>Show as table</summary>
+        <summary>
+          <ChevronRight aria-hidden="true" />
+          Show as table
+        </summary>
         <table>
           <thead>
             <tr>

@@ -1,6 +1,6 @@
 import { Users } from 'lucide-react';
 import { formatCents, ME_ID, type Account, type Person } from '@splitbot/shared';
-import { debtText, oweTone, owedTone, signedCents, tone } from '../display';
+import { debtText, isLongAmount, oweTone, owedTone, signedCents, tone } from '../display';
 import { useExitingItems } from '../useExitingItems';
 import { useFlashOnChange } from '../useFlashOnChange';
 import { Avatar } from './Avatar';
@@ -58,18 +58,20 @@ export function AccountSummary({ account, people, error }: { account: Account | 
 
   const owing = account.people.filter((p) => p.netCents > 0).map((p) => personOf(p.personId));
   const owed = account.people.filter((p) => p.netCents < 0).map((p) => personOf(p.personId));
+  const net = signedCents(account.netCents);
+  const longTotal = isLongAmount(formatCents(account.owedCents)) || isLongAmount(formatCents(account.oweCents));
 
   return (
     <section className="account">
       {alert}
       <p className={`net ${tone(account.netCents)}`}>
         <span className="net-label">Net balance</span>{' '}
-        <FlashAmount value={account.netCents}>
+        <FlashAmount value={account.netCents} className={isLongAmount(net) ? 'long' : undefined}>
           <ToneIcon cents={account.netCents} />
-          {signedCents(account.netCents)}
+          {net}
         </FlashAmount>
       </p>
-      <div className="split">
+      <div className={longTotal ? 'split long' : 'split'}>
         <div className="split-side">
           <p className="total">
             <span className="total-label">You are owed</span> <FlashAmount value={account.owedCents} className={owedTone(account.owedCents)}>{formatCents(account.owedCents)}</FlashAmount>

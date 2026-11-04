@@ -1,16 +1,25 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { UsersRound } from 'lucide-react';
-import { ME_ID, type GroupSummary, type Person } from '@splitbot/shared';
+import { ME_ID, type Expense, type GroupSummary, type Person, type Settlement } from '@splitbot/shared';
 import { addGroupMember, createGroup } from '../api';
-import { addablePeople, memberBalanceText } from '../groupLogic';
+import { addablePeople, lastActivity, memberBalanceText } from '../groupLogic';
 import { Avatar } from './Avatar';
 import { EmptyState } from './EmptyState';
+import { GroupCard } from './GroupCard';
 import { SettleUp } from './SettleUp';
 import { Skeleton } from './Skeleton';
 import { useToast } from './Toast';
 
-export function Groups(props: { groups: GroupSummary[] | null; people: Person[]; error: string | null; onChange: () => void }) {
-  const { groups, people, error, onChange } = props;
+export function Groups(props: {
+  groups: GroupSummary[] | null;
+  people: Person[];
+  /** For each card's last activity. */
+  expenses?: Expense[] | null;
+  settlements?: Settlement[] | null;
+  error: string | null;
+  onChange: () => void;
+}) {
+  const { groups, people, expenses, settlements, error, onChange } = props;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [memberId, setMemberId] = useState('');
@@ -93,8 +102,24 @@ export function Groups(props: { groups: GroupSummary[] | null; people: Person[];
         />
       ) : (
         <>
+          <div className="group-cards">
+            {groups.map((s) => (
+              <GroupCard
+                key={s.group.id}
+                summary={s}
+                people={people}
+                selected={s.group.id === current.group.id}
+                lastDate={lastActivity(s.group.id, expenses ?? [], settlements ?? [])}
+                onSelect={() => {
+                  setSelectedId(s.group.id);
+                  setMemberId('');
+                }}
+              />
+            ))}
+          </div>
+
           <label className="field group-picker">
-            <span>Group</span>
+            <span>Viewing</span>
             <select
               value={current.group.id}
               onChange={(e) => {
@@ -112,7 +137,14 @@ export function Groups(props: { groups: GroupSummary[] | null; people: Person[];
 
           <section className="group-section">
             <h2>Members</h2>
-            <p className="group-members">{current.group.memberIds.map(nameOf).join(', ')}</p>
+            <ul className="member-chips">
+              {current.group.memberIds.map((id) => (
+                <li key={id}>
+                  <Avatar name={nameOf(id)} isYou={id === ME_ID} size="sm" />
+                  <span>{id === ME_ID ? 'You' : nameOf(id)}</span>
+                </li>
+              ))}
+            </ul>
             <form className="group-form" onSubmit={(event) => addMember(event, current.group.id)}>
               <label className="field">
                 <span>Add a person</span>

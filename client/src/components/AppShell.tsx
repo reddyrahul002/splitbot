@@ -4,10 +4,11 @@ import type { Theme } from '../themeLogic';
 import { Avatar } from './Avatar';
 import { ThemeToggle } from './ThemeToggle';
 
-export function AppShell({ theme, onToggleTheme, children }: { theme: Theme; onToggleTheme: () => void; children: ReactNode }) {
+export function AppShell(props: { theme: Theme; onToggleTheme: () => void; children: ReactNode; /** A drawer is open over the page. */ headerInert?: boolean }) {
+  const { theme, onToggleTheme, children, headerInert = false } = props;
   return (
     <div className="app">
-      <header className="topbar">
+      <header className="topbar" inert={headerInert}>
         <span className="logo" aria-hidden="true">
           <Split />
         </span>

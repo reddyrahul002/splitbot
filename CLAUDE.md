@@ -25,7 +25,7 @@ server/src/drafts.ts      # in-memory drafts with TTL
 server/src/domain/        # split, balances, settle, summary, account, guardrails (pure functions)
 server/src/agent/         # Gemini tools, loop, system prompt
 server/test/              # vitest
-client/src/               # React app: AppShell, AccountSummary, Tabs (SettleUp, Expenses, Charts, Groups), Chat, DraftCard
+client/src/               # React app: AppShell, AccountSummary, Tabs (SettleUp, Expenses, Charts, Groups), Chat in ChatDrawer, DraftCard, BottomTabBar
 client/src/styles/tokens.css # design tokens for both themes; the only file with raw colours
 client/test/              # vitest (pure logic, fetch wrappers, render tests, token contrast)
 ```

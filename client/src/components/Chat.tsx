@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { SendHorizontal } from 'lucide-react';
+import { SendHorizontal, X } from 'lucide-react';
 import type { ChatMessage, Draft, Group, Person } from '@splitbot/shared';
 import { sendChat } from '../api';
 import { buildHistory, MAX_TEXT } from '../draftLogic';
@@ -19,7 +19,7 @@ type Item = { id: number; kind: 'user' | 'model' | 'error'; text: string; drafts
 const toMessages = (items: Item[]): ChatMessage[] =>
   items.flatMap((item) => (item.kind === 'error' ? [] : [{ role: item.kind, text: item.text }]));
 
-export function Chat({ people, groups, onChange }: { people: Person[]; groups?: Group[]; onChange: () => void }) {
+export function Chat({ people, groups, onChange, onClose }: { people: Person[]; groups?: Group[]; onChange: () => void; onClose?: () => void }) {
   const [items, setItems] = useState<Item[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -67,6 +67,11 @@ export function Chat({ people, groups, onChange }: { people: Person[]; groups?: 
           <h2>Ask SplitBot</h2>
           <p>Nothing saves until you confirm.</p>
         </div>
+        {onClose && (
+          <button type="button" className="icon-button chat-close" aria-label="Close chat" onClick={onClose}>
+            <X aria-hidden="true" />
+          </button>
+        )}
       </header>
       <div className="messages">
         {items.length === 0 && (

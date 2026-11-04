@@ -92,6 +92,9 @@
   --chart-baseline: #a8a29e;
   --chart-hover: #f1efea;
 
+  /* Behind the chat drawer */
+  --scrim: rgb(28 25 23 / 40%);
+
   /* Spacing: 4px base */
   --space-1: 4px;
   --space-2: 8px;
@@ -200,6 +203,8 @@
   --chart-grid: #3a362f;
   --chart-baseline: #6b665e;
   --chart-hover: #2f2b26;
+
+  --scrim: rgb(0 0 0 / 55%);
 
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%);
   --shadow-md: 0 2px 8px rgb(0 0 0 / 35%);

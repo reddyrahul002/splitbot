@@ -89,6 +89,7 @@ export function DraftCard(props: {
   const locked = status !== 'open' || finishing;
   const known = [...people, ...draft.newPeople];
   const nameOf = (id: string) => known.find((p) => p.id === id)?.name ?? 'Unknown';
+  const displayName = (id: string) => (id === ME_ID ? 'You' : nameOf(id));
   const isNew = (id: string) => status !== 'saved' && id.startsWith(NEW_PERSON_PREFIX);
 
   function fail(err: unknown) {
@@ -233,7 +234,7 @@ export function DraftCard(props: {
             <Select label="Paid by" value={draft.expense.paidBy} disabled={locked} onChange={(paidBy) => edit({ paidBy })}>
               {known.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name}
+                  {displayName(p.id)}
                 </option>
               ))}
             </Select>
@@ -254,7 +255,7 @@ export function DraftCard(props: {
             </thead>
             <tbody>
               {draft.expense.shares.map((share) => (
-                <ShareRow key={share.personId} personId={share.personId} name={nameOf(share.personId)} cents={share.cents} isNew={isNew(share.personId)} />
+                <ShareRow key={share.personId} personId={share.personId} name={displayName(share.personId)} cents={share.cents} isNew={isNew(share.personId)} />
               ))}
             </tbody>
           </table>

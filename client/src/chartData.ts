@@ -58,6 +58,11 @@ export function balanceDomain(rows: ChartRow[]): [number, number] {
   return [rows.some((row) => row.cents < 0) ? -reach : 0, rows.some((row) => row.cents > 0) ? reach : 0];
 }
 
+/** Space for axis labels and values. Narrow columns give more of it to the bars. */
+export function chartSizes(narrow: boolean) {
+  return narrow ? { categoryAxis: 112, categoryRight: 64, balanceAxis: 72 } : { categoryAxis: 140, categoryRight: 100, balanceAxis: 110 };
+}
+
 /** An axis tick: "$25" or "$25.50". Ticks can be fractional, which formatCents rejects, so it rounds first. */
 export function axisLabel(cents: number): string {
   return formatCents(Math.round(cents)).replace(/\.00$/, '');

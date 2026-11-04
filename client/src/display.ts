@@ -12,6 +12,9 @@ export const oweTone = (cents: number) => (cents > 0 ? 'i-owe' : 'settled');
 /** "+$39.00", "-$12.50" or "$0.00". */
 export const signedCents = (cents: number) => `${cents > 0 ? '+' : ''}${formatCents(cents)}`;
 
+/** Five figures and up need more room, or they'd break mid-number at the card's largest sizes. */
+export const isLongAmount = (text: string) => text.length >= 10;
+
 /** A person's debt with me in words, so direction never depends on colour alone. */
 export function debtText(cents: number): string {
   if (cents > 0) return `owes you ${formatCents(cents)}`;

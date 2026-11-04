@@ -12,6 +12,7 @@ import type {
   Person,
   Settlement,
   SettlePlan,
+  SpendingSummary,
 } from '@splitbot/shared';
 
 export const UNREACHABLE_MESSAGE = "Can't reach the server. Is it running?";
@@ -66,6 +67,8 @@ export const getAccount = () => request<Account>('/api/account');
 export const getSettlePlan = () => request<SettlePlan>('/api/settlements/plan');
 
 export const createDraft = (body: DraftRequest) => request<Draft>('/api/drafts', withJson('POST', body));
+
+export const getSummary = () => request<SpendingSummary>('/api/summary');
 
 export const getExpenses = () => request<Expense[]>('/api/expenses');
 

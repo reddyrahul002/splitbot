@@ -1,13 +1,7 @@
-import { formatCents, type Account, type AccountPerson, type Person } from '@splitbot/shared';
-import { signedCents, tone } from '../display';
+import { formatCents, type Account, type Person } from '@splitbot/shared';
+import { debtText, signedCents, tone } from '../display';
 
 const peopleCount = (count: number) => (count === 1 ? '1 person' : `${count} people`);
-
-function personText({ netCents }: AccountPerson): string {
-  if (netCents > 0) return `owes you ${formatCents(netCents)}`;
-  if (netCents < 0) return `you owe ${formatCents(Math.abs(netCents))}`;
-  return 'settled up';
-}
 
 export function AccountSummary({ account, people, error }: { account: Account | null; people: Person[]; error: string | null }) {
   const nameOf = (id: string) => people.find((p) => p.id === id)?.name ?? 'Unknown';
@@ -42,7 +36,7 @@ export function AccountSummary({ account, people, error }: { account: Account | 
           {account.people.map((person) => (
             <li key={person.personId} className={`person ${tone(person.netCents)}`}>
               <span>{nameOf(person.personId)}</span>
-              <span>{personText(person)}</span>
+              <span>{debtText(person.netCents)}</span>
             </li>
           ))}
         </ul>

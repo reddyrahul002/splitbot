@@ -43,6 +43,10 @@ splitbot/
     src/api.ts            # fetch wrappers
     src/draftLogic.ts     # pure helpers for the chat and draft card (input checks, edit queue, history)
     src/markdown.ts       # bold, italic and lists for chat replies; plain data, never raw HTML
+    src/settleLogic.ts    # pure helpers for Smart settle up: transfer text, savings note, settlement draft request
+    src/history.ts        # pure helpers for Expenses: merging, filtering, row text
+    src/chartData.ts      # pure helpers that shape server data for the charts; values stay in cents
+    src/display.ts        # how money reads on screen: colour class, signed amounts, debt wording
     test/*.test.ts(x)     # vitest: pure logic, fetch wrappers, markdown rendering
   .env.example            # GEMINI_API_KEY, GEMINI_MODEL (default gemini-3.5-flash-lite, free tier; gemini-2.5-flash is closed to new keys)
 ```
@@ -464,7 +468,7 @@ Prerequisite: Step 4 is committed. Chat is the only panel for now; Step 6 adds t
 Prerequisite: Step 5 is committed. Each part ends with `npm test`, `npm run typecheck` and a curl check through the Vite proxy, then stops for the user's browser check, `/review-step` and a commit (`Step 6 Part X: <summary>`). The user can stop after any part.
 
 ### Rules
-- All maths stays on the server in `domain/`; the client only displays. New domain code is limited to `directDebts` and `domain/account.ts`, which build on the existing functions.
+- All money maths stays on the server; chart scale and tick rounding are display only. New domain code is limited to `directDebts` and `domain/account.ts`, which build on the existing functions.
 - **`directDebts`** wraps `pairwiseDebts` and cancels circular debts in a fixed order. Without it, recording a Smart settle-up payment between people leaves a false circle (me→Arun, Arun→Mei, Mei→me) after everyone's net is $0. Each person's net is unchanged, and zero nets give no debts. The account summary and the `get_balances` tool use it.
 - The UI doesn't call transfers "minimum", because `suggestSettlements` is greedy. The savings note appears only when the saving is above 0.
 - Delete uses a two-click confirm. Delete and group creation are logged exceptions to "every write goes through a draft".

@@ -241,6 +241,95 @@ button.danger {
   color: #fff;
 }
 
+.chart-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+
+.toggle {
+  display: inline-flex;
+}
+
+.toggle button {
+  border-radius: 0;
+}
+
+.toggle button:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.toggle button:last-child {
+  margin-left: -1px;
+  border-radius: 0 6px 6px 0;
+}
+
+.toggle button.active {
+  border-color: #0f766e;
+  background: #0f766e;
+  color: #fff;
+}
+
+.chart-block {
+  margin-bottom: 20px;
+}
+
+.chart-block h2 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.chart-block .hint {
+  margin: 0 0 6px;
+}
+
+.chart-tip {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 10px;
+  border: 1px solid #d6d3d1;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 13px;
+}
+
+.chart-tip span {
+  color: #57534e;
+}
+
+.chart-table {
+  margin-top: 6px;
+  color: #57534e;
+  font-size: 13px;
+}
+
+.chart-table summary {
+  cursor: pointer;
+}
+
+.chart-table table {
+  width: 100%;
+  margin-top: 6px;
+  border-collapse: collapse;
+  color: #1c1917;
+}
+
+.chart-table th,
+.chart-table td {
+  padding: 4px 0;
+  border-bottom: 1px solid #e7e5e4;
+  text-align: left;
+}
+
+.chart-table th:last-child,
+.chart-table td:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .tab-list {
   display: flex;
   flex-wrap: wrap;

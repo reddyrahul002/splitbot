@@ -12,6 +12,7 @@ import {
   getPeople,
   getSettlements,
   getSettlePlan,
+  getSummary,
   sendChat,
   UNREACHABLE_MESSAGE,
 } from '../src/api';
@@ -111,6 +112,15 @@ describe('expense and payment wrappers', () => {
     expect(err.status).toBe(404);
     expect(err.code).toBe('NOT_FOUND');
     expect(err.message).toBe('Expense not found.');
+  });
+});
+
+describe('getSummary', () => {
+  it('#103 asks /api/summary and returns it as is', async () => {
+    const summary = { myCents: 0, totalCents: 0, byCategory: [], byMonth: [] };
+    const fetchMock = stubFetch(json(200, summary));
+    await expect(getSummary()).resolves.toEqual(summary);
+    expect(fetchMock.mock.calls[0]).toEqual(['/api/summary', undefined]);
   });
 });
 

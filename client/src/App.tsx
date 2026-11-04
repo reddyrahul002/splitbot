@@ -1,19 +1,18 @@
 import { AccountSummary } from './components/AccountSummary';
+import { Charts } from './components/Charts';
 import { Chat } from './components/Chat';
 import { Expenses } from './components/Expenses';
 import { SettleUp } from './components/SettleUp';
 import { Tabs, type Tab } from './components/Tabs';
 import { useAppData } from './useAppData';
 
-const comingSoon = (what: string) => <p className="hint">{what} will appear here.</p>;
-
 export function App() {
-  const { people, account, plan, expenses, settlements, error, refresh } = useAppData();
+  const { people, account, plan, expenses, settlements, summary, error, refresh } = useAppData();
 
   const tabs: Tab[] = [
     { id: 'settle', label: 'Smart settle up', content: <SettleUp account={account} plan={plan} people={people} error={error} onChange={refresh} /> },
     { id: 'expenses', label: 'Expenses', content: <Expenses expenses={expenses} settlements={settlements} people={people} error={error} onChange={refresh} /> },
-    { id: 'charts', label: 'Charts', content: comingSoon('Spending charts') },
+    { id: 'charts', label: 'Charts', content: <Charts summary={summary} account={account} people={people} error={error} /> },
   ];
 
   return (

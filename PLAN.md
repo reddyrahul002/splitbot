@@ -146,7 +146,7 @@ Each step ends with `npm test` passing and a commit. After each step I stop for 
 - **Step 5: Chat UI + DraftCard + confirm flow** (Day 1 evening). The dinner example works end to end in the browser, and warnings and "Use Arun" are visible.
 - **Step 6: Three-column layout, account summary, Smart settle up, Expenses, Charts, optional Groups** (Day 2 morning). Merges the essentials of the old Steps 6 and 7; built in parts A–E. See "Step 6 detail" below.
 - **Step 7: Polish** (Day 2 morning). README with setup steps, and DECISIONS.md brought up to date. Cut for time: the manual expense form fallback (via `POST /api/drafts` + confirm) and the README screenshots.
-- **Step 8 (stretch): Deploy.** Frontend on Vercel. API on Render as a single instance, with `STORE=mongo` and data in Atlas, because Render's free tier has an ephemeral disk that would reset the JSON file. Vercel rewrites `/api/*` to the Render service, so the browser still calls its own origin, with no CORS change. The single instance matters because drafts are in memory (#M15); drafts open during a restart are lost.
+- **Step 8 (stretch): Deploy.** Frontend on Vercel. API on Render as a single instance, with `STORE=mongo` and data in Atlas, because Render's free tier has an ephemeral disk that would reset the JSON file. Vercel rewrites `/api/*` to the Render service, so the browser still calls its own origin, with no CORS change. The single instance matters because drafts are in memory (#M15); drafts open during a restart are lost. Built in parts A–C. See "Step 8 detail" below.
 - **Step 9: MongoDB Atlas store.** Built before the Step 8 deploy; the number keeps Step 8 stable. See "Step 9 detail" below.
 - **Step 10: "Fresh Ledger" UI redesign.** Visual and interaction changes only, in parts A–D. See "Step 10 detail" below.
 
@@ -490,6 +490,29 @@ Prerequisite: Step 5 is committed. Each part ends with `npm test`, `npm run type
 
 ### Browser data (scratch `DB_PATH`)
 Dinner $90: I paid, split with Arun and Mei, Arun had $12 of drinks. Lunch $30: Mei paid, split with Arun. Gas $50: Kai paid, split with me. Expected: owed $64.00 from 2 people, owe $25.00 to 1 person, net +$39.00; Arun $38 and Mei $26 green, Kai $25 red.
+
+## Step 8 detail: deploy
+Prerequisite: Steps 9 and 10 are committed. The user does the deploying; the AI prepares the code and config and deploys nothing. Each part ends with `npm test` and `npm run typecheck`, then stops for the user's review. The user commits (`Step 8 Part X: <summary>`).
+
+### Rules
+- **Passcode gate.** With `APP_PASSCODE` set, every `/api` route needs it in the `x-app-passcode` header, URL-encoded because a header can't hold non-Latin text. It's the first thing on `/api`, so a locked request never reaches the store or has its body read. Unset means no gate, as in local dev.
+- **Refuses to start.** With `NODE_ENV=production`, the server exits if `APP_PASSCODE` is empty or `STORE` isn't `mongo`. Messages name the setting, never a value.
+- **Chat limit.** 10 messages a minute and 80 a day (`CHAT_LIMITS`), because one message can make up to 6 Gemini calls. Only valid requests count; one that fails still counts, since it may have used quota. 429 `RATE_LIMITED` with `Retry-After`.
+- **Passcode guesses.** 10 wrong in 15 minutes, across all callers, then 429 for everyone, including the right passcode. A request with no passcode doesn't count.
+- **No caching.** Every `/api` response is `Cache-Control: no-store`, because Vercel can cache external rewrites.
+- **`GET /healthz`** is outside the gate and doesn't touch the store. **`GET /api/session`** answers 204 when unlocked.
+- **Listening.** `PORT` from the environment (blank means 3001, invalid stops startup), on host `0.0.0.0`.
+- **Limits live in memory**, so a restart resets them. Google's quota is the hard cap, and the free key costs nothing if it's hit.
+
+### Parts
+- **A: Server.** Gate, rate limits, `PORT` and host, `/healthz`, `/api/session`, refuse-to-start checks.
+- **B: Client.** `AccessGate` (checking, waking, locked, unlocked) around `<App />` in `main.tsx`, `UnlockScreen`, and the header added in `api.ts` only when a passcode is stored. The passcode lives in `sessionStorage`. A cold start shows "Waking up the server…" and retries, not the unlock screen.
+- **C: Deploy config and docs.** `client/vercel.json` with a placeholder Render URL (Vercel doesn't document env vars in rewrite destinations), a client `build` script, `tsx` moved to the server's `dependencies`, a server `start` script, a local dry run of both installs, and README deploy steps.
+
+### Render settings
+Root Directory blank, Node, Free. Build `npm ci --omit=dev -w @splitbot/server`. Start `npm start -w @splitbot/server`. Health Check Path `/healthz`. Region closest to the Atlas cluster.
+
+Environment: `APP_PASSCODE`, `GEMINI_API_KEY` and `MONGODB_URI` (secrets), `STORE=mongo`, `GEMINI_MODEL=gemini-3.5-flash-lite`, `NODE_VERSION=22`, `TZ=Australia/Melbourne` (default draft dates use the server's time zone). Render sets `PORT` and `NODE_ENV` itself.
 
 ## Step 9 detail: MongoDB Atlas store
 `STORE=json|mongo` picks the store; JSON stays the default. `STORE=mongo` without `MONGODB_URI`, or any other value, stops startup instead of falling back. Cut for time: the db.json migration script (the user starts with fresh data) and `explain()` index tests.

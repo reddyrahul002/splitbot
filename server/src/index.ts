@@ -6,18 +6,25 @@ import type { ChatMessage } from '@splitbot/shared';
 import { createGeminiClient, DEFAULT_GEMINI_MODEL } from './agent/gemini';
 import { runAgent } from './agent/loop';
 import { createApp } from './app';
-import { describeEnv, loadEnv, localToday, REPO_ROOT } from './config';
+import { describeEnv, loadEnv, localToday, passcodeFromEnv, productionConfigProblem, REPO_ROOT, serverAddress } from './config';
 import { createDraftStore } from './drafts';
+import { CHAT_LIMITS, createRateLimiter } from './rate-limit';
 import { gracefulShutdown } from './shutdown';
 import { openConfiguredStore, storeConfigFromEnv } from './store-select';
 
 // Load config before reading any env var.
 console.log(describeEnv(loadEnv()));
 
+// Stop before opening anything, rather than run with the API open or data about to be lost.
+const problem = productionConfigProblem(process.env);
+if (problem) throw new Error(problem);
+
 // A relative DB_PATH is relative to the repo root, where .env lives.
 const dbPath = resolve(REPO_ROOT, process.env.DB_PATH || 'server/data/db.json');
-const port = Number(process.env.PORT ?? 3001);
+const { port, host } = serverAddress(process.env);
 const today = localToday;
+const passcode = passcodeFromEnv(process.env);
+console.log(`Passcode gate: ${passcode ? 'on' : 'off (no APP_PASSCODE)'}`);
 
 const store = await openConfiguredStore(storeConfigFromEnv(process.env, dbPath));
 const drafts = createDraftStore();
@@ -31,9 +38,9 @@ console.log(client ? `Chat: Gemini model ${model}` : 'Chat: off (no GEMINI_API_K
 
 const server = express();
 server.use(cors({ origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/] }));
-server.use(createApp({ store, drafts, today, agent }));
-const listener = server.listen(port, () => {
-  console.log(`SplitBot API on http://localhost:${port} (data: ${store.path})`);
+server.use(createApp({ store, drafts, today, agent, passcode, chatLimiter: createRateLimiter(CHAT_LIMITS) }));
+const listener = server.listen(port, host, () => {
+  console.log(`SplitBot API on http://${host}:${port} (data: ${store.path})`);
 });
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

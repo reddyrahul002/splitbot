@@ -21,6 +21,8 @@ server/src/app.ts         # Express app + routes
 server/src/store.ts       # Store interface; JSON file store (server/data/db.json), atomic writes
 server/src/store-mongo.ts # MongoDB store: cache, transactions, revision check
 server/src/store-select.ts # picks the store from STORE and MONGODB_URI
+server/src/passcode.ts    # checks the APP_PASSCODE header
+server/src/rate-limit.ts  # in-memory limiter for chat and passcode guesses
 server/src/drafts.ts      # in-memory drafts with TTL
 server/src/domain/        # split, balances, settle, summary, account, guardrails (pure functions)
 server/src/agent/         # Gemini tools, loop, system prompt
@@ -36,7 +38,7 @@ client/test/              # vitest (pure logic, fetch wrappers, render tests, to
 - **Tests first for domain logic.** Write the tests, confirm they fail, then implement.
 - **Never edit tests just to make them pass.** If a test looks wrong, stop and explain why instead of changing it.
 - **Never modify source or test files with shell commands (sed, python, heredocs).** Always use the Edit/Write tools so every change shows as a reviewable diff.
-- **Never print or commit the API key or database URI.** `GEMINI_API_KEY` and `MONGODB_URI` live only in `.env`, which is gitignored. Commit only `.env.example`. Don't echo env vars or log request headers.
+- **Never print or commit the API key, database URI or passcode.** `GEMINI_API_KEY`, `MONGODB_URI` and `APP_PASSCODE` live only in `.env`, which is gitignored. Commit only `.env.example`. Don't echo env vars or log request headers.
 - Log notable decisions, AI mistakes and re-prompts in DECISIONS.md as they happen.
 - Use `/review-step` to review the current step before committing.
 

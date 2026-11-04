@@ -25,6 +25,8 @@ import { normalizeName } from './domain/guardrails';
 import { SplitError } from './domain/split';
 import { spendingSummary } from './domain/summary';
 import { applyEdits, buildExpenseDraft, buildSettlementDraft, DraftError, finalizeDraft, joinGroup, type DraftStore } from './drafts';
+import { PASSCODE_HEADER, passcodeMatches } from './passcode';
+import { createRateLimiter, PASSCODE_FAILURE_LIMITS, waitText, type RateLimiter } from './rate-limit';
 import { StoreConflictError, type Store } from './store';
 
 export interface AppDeps {
@@ -38,6 +40,10 @@ export interface AppDeps {
   log?: (message: string) => void;
   /** Answers POST /api/chat. Undefined when GEMINI_API_KEY isn't set; the route then answers 503. */
   agent?: (messages: ChatMessage[]) => Promise<ChatResponse>;
+  /** When set, every /api route needs it in the passcode header. Undefined leaves the API open, as in local dev. */
+  passcode?: string;
+  /** Limits POST /api/chat. Undefined means no limit. */
+  chatLimiter?: RateLimiter;
 }
 
 const cents = z.int();
@@ -114,6 +120,12 @@ class HttpError extends Error {
 const draftNotFound = () => new HttpError(404, 'DRAFT_NOT_FOUND', 'That draft no longer exists. It may have expired, been confirmed or been discarded.');
 const notFound = (what: string) => new HttpError(404, 'NOT_FOUND', `${what} not found.`);
 
+/** Refuses the request for now, telling the caller how long to wait. */
+function rateLimited(res: Response, seconds: number, message: string): HttpError {
+  res.set('Retry-After', String(seconds));
+  return new HttpError(429, 'RATE_LIMITED', `${message} Try again in ${waitText(seconds)}.`);
+}
+
 /** A draft can only point at a group that exists. */
 function findDraftGroup(groups: Group[] | undefined, id: string): Group {
   const group = groups?.find((g) => g.id === id);
@@ -131,8 +143,37 @@ function newestFirst<T extends { date: string }>(items: T[], tiebreak: (item: T)
 }
 
 export function createApp(deps: AppDeps): express.Express {
-  const { store, drafts, today, now = Date.now, log = (m) => console.error(m), agent } = deps;
+  const { store, drafts, today, now = Date.now, log = (m) => console.error(m), agent, passcode, chatLimiter } = deps;
+  const passcodeFailures = createRateLimiter(PASSCODE_FAILURE_LIMITS, now);
   const app = express();
+
+  // Outside the gate, and away from the store, so the host's health checks need no passcode and cost no database calls.
+  app.get('/healthz', (_req, res) => {
+    res.json({ ok: true });
+  });
+
+  // The API sits behind a caching proxy in production, and a private response must never be served from a cache.
+  app.use('/api', (_req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    next();
+  });
+
+  // Before everything else on /api, so a locked request never reaches the store or has its body read.
+  if (passcode !== undefined) {
+    app.use('/api', (req, res, next) => {
+      const header = req.get(PASSCODE_HEADER);
+      if (!header) throw new HttpError(401, 'PASSCODE_REQUIRED', 'Enter the passcode to unlock SplitBot.');
+      // Checked before comparing, so a right passcode waits too: otherwise guessing could carry on through a lockout.
+      const wait = passcodeFailures.waitSeconds();
+      if (wait > 0) throw rateLimited(res, wait, 'Too many wrong passcodes.');
+      if (!passcodeMatches(header, passcode)) {
+        passcodeFailures.record();
+        throw new HttpError(401, 'PASSCODE_REQUIRED', "That passcode isn't right.");
+      }
+      next();
+    });
+  }
+
   // Routes read the store's cache synchronously, so another instance's writes are picked up before they run.
   app.use('/api', async (_req, _res, next) => {
     await store.refresh();
@@ -141,6 +182,11 @@ export function createApp(deps: AppDeps): express.Express {
   app.use(express.json());
 
   const send = (res: Response, status: number, body?: unknown) => (body === undefined ? res.status(status).end() : res.status(status).json(body));
+
+  // Lets the client ask whether it's unlocked. With no passcode set, the answer is always yes.
+  app.get('/api/session', (_req, res) => {
+    res.status(204).end();
+  });
 
   app.get('/api/people', (_req, res) => {
     res.json(store.snapshot().people);
@@ -151,6 +197,10 @@ export function createApp(deps: AppDeps): express.Express {
       throw new HttpError(503, 'GEMINI_NOT_CONFIGURED', 'Chat needs GEMINI_API_KEY in .env (see .env.example).');
     }
     const { messages } = ChatRequestSchema.parse(req.body);
+    // After validation, so only a request that would reach Gemini counts.
+    const wait = chatLimiter?.waitSeconds() ?? 0;
+    if (wait > 0) throw rateLimited(res, wait, "That's a lot of messages for now.");
+    chatLimiter?.record();
     const body: ChatResponse = await agent(messages);
     res.json(body);
   });

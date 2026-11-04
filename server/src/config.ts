@@ -20,6 +20,28 @@ export function loadEnv(path: string = ROOT_ENV_PATH): EnvStatus {
   return { path, found, geminiKeySet: Boolean(process.env.GEMINI_API_KEY) };
 }
 
+type Env = Record<string, string | undefined>;
+
+/** Where to listen. A blank PORT counts as unset, because Number('') is 0, which would pick a random port. */
+export function serverAddress(env: Env): { port: number; host: string } {
+  const text = env.PORT?.trim() || '3001';
+  const port = Number(text);
+  if (!/^\d+$/.test(text) || port < 1 || port > 65535) throw new Error('PORT must be a whole number from 1 to 65535.');
+  // Render only routes to 0.0.0.0.
+  return { port, host: '0.0.0.0' };
+}
+
+/** The passcode for the /api gate, or undefined for no gate, as in local dev. */
+export const passcodeFromEnv = (env: Env) => env.APP_PASSCODE?.trim() || undefined;
+
+/** Why this config mustn't run in production, or null. Names settings, never values. */
+export function productionConfigProblem(env: Env): string | null {
+  if (env.NODE_ENV !== 'production') return null;
+  if (!passcodeFromEnv(env)) return 'APP_PASSCODE must be set in production, or the API would be open to anyone.';
+  if (env.STORE?.trim() !== 'mongo') return 'STORE must be mongo in production, because the host resets the JSON file on every restart.';
+  return null;
+}
+
 /** Today in the server's local time zone, as YYYY-MM-DD. */
 export function localToday(): string {
   const d = new Date();

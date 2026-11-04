@@ -1,5 +1,18 @@
 // Fetch wrappers. Every failure becomes an ApiRequestError whose message can be shown as is.
-import type { Account, ApiError, ChatMessage, ChatResponse, ConfirmResult, Draft, DraftEdits, DraftRequest, Person, SettlePlan } from '@splitbot/shared';
+import type {
+  Account,
+  ApiError,
+  ChatMessage,
+  ChatResponse,
+  ConfirmResult,
+  Draft,
+  DraftEdits,
+  DraftRequest,
+  Expense,
+  Person,
+  Settlement,
+  SettlePlan,
+} from '@splitbot/shared';
 
 export const UNREACHABLE_MESSAGE = "Can't reach the server. Is it running?";
 
@@ -53,6 +66,14 @@ export const getAccount = () => request<Account>('/api/account');
 export const getSettlePlan = () => request<SettlePlan>('/api/settlements/plan');
 
 export const createDraft = (body: DraftRequest) => request<Draft>('/api/drafts', withJson('POST', body));
+
+export const getExpenses = () => request<Expense[]>('/api/expenses');
+
+export const getSettlements = () => request<Settlement[]>('/api/settlements');
+
+export const deleteExpense = (id: string) => request<void>(`/api/expenses/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+export const deleteSettlement = (id: string) => request<void>(`/api/settlements/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
 export const sendChat = (messages: ChatMessage[]) => request<ChatResponse>('/api/chat', withJson('POST', { messages }));
 

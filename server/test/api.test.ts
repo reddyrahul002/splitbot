@@ -2,7 +2,7 @@ import { readFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { Draft, Expense, ExpenseDraftInput } from '@splitbot/shared';
+import type { Draft, Expense, ExpenseDraftInput, Settlement } from '@splitbot/shared';
 import { createApp } from '../src/app';
 import { createDraftStore } from '../src/drafts';
 import { openStore } from '../src/store';
@@ -276,6 +276,21 @@ describe('balances, settle-up and summary', () => {
       { from: 'arun', to: 'me', cents: 2800 },
       { from: 'mei', to: 'me', cents: 2600 },
     ]);
+  });
+
+  it('#127 deleting an expense or a payment updates the account and the plan', async () => {
+    const { app } = await setup();
+    const dinner = (await confirm(app, (await createDraft(app)).id)).body.expense as Expense;
+    const paid = (await confirm(app, (await createDraft(app, { kind: 'settlement', from: 'Arun', to: 'Me', cents: 3800 })).id)).body.settlement as Settlement;
+    expect((await request(app).get('/api/account')).body).toMatchObject({ owedCents: 2600, netCents: 2600 });
+
+    expect((await request(app).delete(`/api/settlements/${paid.id}`)).status).toBe(204);
+    expect((await request(app).get('/api/account')).body).toMatchObject({ owedCents: 6400, netCents: 6400 });
+    expect((await request(app).get('/api/settlements/plan')).body.transfers).toHaveLength(2);
+
+    expect((await request(app).delete(`/api/expenses/${dinner.id}`)).status).toBe(204);
+    expect((await request(app).get('/api/account')).body).toMatchObject({ owedCents: 0, oweCents: 0, netCents: 0 });
+    expect((await request(app).get('/api/settlements/plan')).body).toEqual({ transfers: [], directDebtCount: 0, paymentsSaved: 0 });
   });
 
   it('#43 dinner → balances and pairwise debts', async () => {

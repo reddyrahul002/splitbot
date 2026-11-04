@@ -1,7 +1,7 @@
 // The data every panel shows, refetched together after any change.
 import { useCallback, useEffect, useState } from 'react';
-import type { Account, Person, SettlePlan } from '@splitbot/shared';
-import { getAccount, getPeople, getSettlePlan } from './api';
+import type { Account, Expense, Person, Settlement, SettlePlan } from '@splitbot/shared';
+import { getAccount, getExpenses, getPeople, getSettlements, getSettlePlan } from './api';
 
 /** Wraps loads so only the newest one reports back; a slow older response can't overwrite newer data. */
 export function latestOnly<T>(deliver: (value: T) => void, onError: (err: unknown) => void) {
@@ -21,10 +21,12 @@ interface AppData {
   people: Person[];
   account: Account | null;
   plan: SettlePlan | null;
+  expenses: Expense[] | null;
+  settlements: Settlement[] | null;
 }
 
 export function useAppData() {
-  const [data, setData] = useState<AppData>({ people: [], account: null, plan: null });
+  const [data, setData] = useState<AppData>({ people: [], account: null, plan: null, expenses: null, settlements: null });
   const [error, setError] = useState<string | null>(null);
 
   const [load] = useState(() =>
@@ -40,8 +42,14 @@ export function useAppData() {
 
   const refresh = useCallback(() => {
     void load(async () => {
-      const [people, account, plan] = await Promise.all([getPeople(), getAccount(), getSettlePlan()]);
-      return { people, account, plan };
+      const [people, account, plan, expenses, settlements] = await Promise.all([
+        getPeople(),
+        getAccount(),
+        getSettlePlan(),
+        getExpenses(),
+        getSettlements(),
+      ]);
+      return { people, account, plan, expenses, settlements };
     });
   }, [load]);
 

@@ -1,5 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiRequestError, confirmDraft, createDraft, discardDraft, editDraft, getAccount, getPeople, getSettlePlan, sendChat, UNREACHABLE_MESSAGE } from '../src/api';
+import {
+  ApiRequestError,
+  confirmDraft,
+  createDraft,
+  deleteExpense,
+  deleteSettlement,
+  discardDraft,
+  editDraft,
+  getAccount,
+  getExpenses,
+  getPeople,
+  getSettlements,
+  getSettlePlan,
+  sendChat,
+  UNREACHABLE_MESSAGE,
+} from '../src/api';
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -66,6 +81,36 @@ describe('settle-up wrappers', () => {
     const err = await failure(() => createDraft({ kind: 'settlement', from: 'Arun', to: 'Arun', cents: 500 }));
     expect(err.code).toBe('SAME_PERSON');
     expect(err.message).toBe('A payment needs two different people.');
+  });
+});
+
+describe('expense and payment wrappers', () => {
+  it('#82 getExpenses and getSettlements ask the list routes', async () => {
+    const fetchMock = stubFetch(json(200, []));
+    await expect(getExpenses()).resolves.toEqual([]);
+    expect(fetchMock.mock.calls[0]).toEqual(['/api/expenses', undefined]);
+
+    const settlementsMock = stubFetch(json(200, []));
+    await expect(getSettlements()).resolves.toEqual([]);
+    expect(settlementsMock.mock.calls[0]).toEqual(['/api/settlements', undefined]);
+  });
+
+  it('#83 deletes use DELETE on an encoded id and resolve on 204', async () => {
+    const expenseMock = stubFetch(new Response(null, { status: 204 }));
+    await expect(deleteExpense('a/b')).resolves.toBeUndefined();
+    expect(expenseMock.mock.calls[0]).toEqual(['/api/expenses/a%2Fb', { method: 'DELETE' }]);
+
+    const settlementMock = stubFetch(new Response(null, { status: 204 }));
+    await expect(deleteSettlement('s 1')).resolves.toBeUndefined();
+    expect(settlementMock.mock.calls[0]).toEqual(['/api/settlements/s%201', { method: 'DELETE' }]);
+  });
+
+  it('#84 deleting something already gone keeps the NOT_FOUND code', async () => {
+    stubFetch(json(404, { error: { code: 'NOT_FOUND', message: 'Expense not found.' } }));
+    const err = await failure(() => deleteExpense('gone'));
+    expect(err.status).toBe(404);
+    expect(err.code).toBe('NOT_FOUND');
+    expect(err.message).toBe('Expense not found.');
   });
 });
 

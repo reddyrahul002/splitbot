@@ -191,6 +191,56 @@ select:disabled {
   font-weight: 600;
 }
 
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.history {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #e7e5e4;
+}
+
+.history-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  overflow-wrap: anywhere;
+}
+
+.history-detail {
+  color: #57534e;
+  font-size: 13px;
+}
+
+.history-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+button.danger {
+  border-color: #991b1b;
+  background: #991b1b;
+  color: #fff;
+}
+
 .tab-list {
   display: flex;
   flex-wrap: wrap;

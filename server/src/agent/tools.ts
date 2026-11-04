@@ -14,7 +14,7 @@ import {
   type PersonId,
 } from '@splitbot/shared';
 import { computeBalances, pairwiseDebts } from '../domain/balances';
-import { currentExpenseMessages, findCloseName, normalizeName, splitWays, unnamedPeople } from '../domain/guardrails';
+import { currentExpenseMessages, findCloseName, hasDatePhrase, normalizeName, respelledNames, splitWays, unnamedPeople } from '../domain/guardrails';
 import { formatCents, toCents } from '../domain/money';
 import { suggestSettlements } from '../domain/settle';
 import { SplitError } from '../domain/split';
@@ -138,7 +138,7 @@ const TOOLS = {
       const input: ExpenseDraftInput = {
         description: args.description,
         category: args.category,
-        date: args.date,
+        date: statedDate(args.date, ctx),
         totalCents: toCents(args.totalDollars),
         paidBy: args.paidBy,
         participants: args.participants,
@@ -149,6 +149,7 @@ const TOOLS = {
         shares: valueMap(args.shareCounts, (s) => s.shares),
       };
       const draft = buildExpenseDraft(input, people, { today: ctx.today, message: allText(ctx) });
+      addRespelledWarnings(draft, [args.paidBy, ...args.participants], people, allText(ctx));
       ctx.drafts.put(draft);
       return { result: describeDraft(draft, people), draft };
     },
@@ -162,9 +163,10 @@ const TOOLS = {
     run(args, ctx) {
       const people = ctx.store.snapshot().people;
       requireNamed([args.from, args.to], people, allText(ctx), 'Ask the user who is involved.');
-      const draft = buildSettlementDraft({ from: args.from, to: args.to, cents: toCents(args.dollars), date: args.date }, people, {
+      const draft = buildSettlementDraft({ from: args.from, to: args.to, cents: toCents(args.dollars), date: statedDate(args.date, ctx) }, people, {
         today: ctx.today,
       });
+      addRespelledWarnings(draft, [args.from, args.to], people, allText(ctx));
       ctx.drafts.put(draft);
       return { result: describeDraft(draft, people), draft };
     },
@@ -289,6 +291,25 @@ const fail = (code: string, message: string): ToolOutcome => ({ result: { error:
  * earlier expense in the same chat also counts.
  */
 const allText = (ctx: ToolContext) => ctx.userMessages.join('\n');
+
+/**
+ * The model's date, only if a date phrase is in any user message in the chat (it invents them). Undefined means today.
+ * Known limitation: a phrase from an earlier expense lets a wrong date through; the card shows it and it can be edited.
+ */
+const statedDate = (date: string | undefined, ctx: ToolContext) => (hasDatePhrase(allText(ctx)) ? date : undefined);
+
+/**
+ * The model corrects spellings without saying so ("molya" → "mowlya"), and a name that then matches nobody close gets no
+ * CLOSE_NAME warning. This shows the change on the card, with the name as it will be saved.
+ */
+function addRespelledWarnings(draft: Draft, names: string[], people: Person[], userText: string): void {
+  const meName = people.find((p) => p.id === ME_ID)?.name;
+  const known = [...people, ...draft.newPeople];
+  for (const { typed, used } of respelledNames(names, userText, meName)) {
+    const person = known.find((p) => normalizeName(p.name) === normalizeName(used));
+    if (person) draft.warnings.push({ code: 'NAME_RESPELLED', message: `You typed '${typed}', using '${person.name}'`, personId: person.id });
+  }
+}
 
 /** `[{ person, value }]` → `{ name: value }`. A name listed twice (after normalizing) is an error, not an overwrite. */
 function valueMap<T extends { person: string }>(items: T[] | undefined, value: (item: T) => number): Record<string, number> | undefined {

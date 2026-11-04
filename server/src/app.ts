@@ -117,7 +117,7 @@ export function createApp(deps: AppDeps): express.Express {
 
   app.post('/api/chat', async (req, res) => {
     if (!agent) {
-      throw new HttpError(503, 'GEMINI_NOT_CONFIGURED', 'Chat needs GEMINI_API_KEY in .env (see .env.example). You can still add expenses with the form.');
+      throw new HttpError(503, 'GEMINI_NOT_CONFIGURED', 'Chat needs GEMINI_API_KEY in .env (see .env.example).');
     }
     const { messages } = ChatRequestSchema.parse(req.body);
     const body: ChatResponse = await agent(messages);

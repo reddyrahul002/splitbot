@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Draft, ExpenseDraftInput, Person } from '@splitbot/shared';
+import type { Draft, DraftWarning, ExpenseDraftInput, Person } from '@splitbot/shared';
 import {
   applyEdits,
   buildExpenseDraft,
@@ -216,7 +216,7 @@ describe('buildExpenseDraft', () => {
       PEOPLE,
       OPTS,
     );
-    expect(d.newPeople).toEqual([{ id: 'new:constructor', name: 'constructor' }]);
+    expect(d.newPeople).toEqual([{ id: 'new:constructor', name: 'Constructor' }]);
     expect(sharesOf(d)).toEqual({ me: 4500, 'new:constructor': 4500 });
   });
 });
@@ -323,6 +323,73 @@ describe('applyEdits', () => {
     expect(expenseOf(edited).splitMeta.adjustments).toEqual([{ person: 'arun', cents: 1200 }]);
     const result = finalizeDraft(edited, PEOPLE, { newId: sequentialIds(), now: '2026-11-03T12:00:00.000Z' });
     expect(result.createdPeople).toEqual([]);
+  });
+
+  it('Step 5 #5 new people get capitalized names, in the draft and when created; existing people keep theirs', () => {
+    const d = buildExpenseDraft({ ...DINNER, adjustments: undefined, participants: ['me', 'mowlya', 'arun'] }, PEOPLE, OPTS);
+    expect(d.newPeople).toEqual([{ id: 'new:mowlya', name: 'Mowlya' }]);
+    const result = finalizeDraft(d, PEOPLE, { newId: sequentialIds(), now: '2026-11-04T12:00:00.000Z' });
+    expect(result.createdPeople.map((p) => p.name)).toEqual(['Mowlya']);
+
+    const s = buildSettlementDraft({ from: 'mowlya', to: 'me', cents: 2000 }, PEOPLE, OPTS);
+    expect(s.newPeople).toEqual([{ id: 'new:mowlya', name: 'Mowlya' }]);
+  });
+
+  describe('Step 5 NAME_RESPELLED warnings', () => {
+    const respelled = (personId: string, typed: string, used: string): DraftWarning => ({
+      code: 'NAME_RESPELLED',
+      message: `You typed '${typed}', using '${used}'`,
+      personId,
+    });
+    const withRespelled = () => {
+      const d = buildExpenseDraft({ ...DINNER, adjustments: undefined, paidBy: 'me', participants: ['me', 'Aroon', 'Mei'] }, PEOPLE, OPTS);
+      return { ...d, warnings: [...d.warnings, respelled('new:aroon', 'Aron', 'Aroon'), respelled('mei', 'Mai', 'Mei')] };
+    };
+    const codes = (d: Draft) => d.warnings.filter((w) => w.code === 'NAME_RESPELLED').map((w) => w.personId);
+
+    it('#6 stay through other edits, including an amount edit', () => {
+      expect(codes(applyEdits(withRespelled(), { description: 'Lunch' }, PEOPLE))).toEqual(['new:aroon', 'mei']);
+      expect(codes(applyEdits(withRespelled(), { totalCents: 9300 }, PEOPLE))).toEqual(['new:aroon', 'mei']);
+    });
+
+    it('#7 go away when the person is swapped out of the draft', () => {
+      expect(codes(applyEdits(withRespelled(), { replace: [{ from: 'new:aroon', to: 'arun' }] }, PEOPLE))).toEqual(['mei']);
+    });
+
+    it('#8 go away when a new payer is dropped from the draft', () => {
+      const d = buildExpenseDraft({ ...DINNER, adjustments: undefined, paidBy: 'Kai', participants: ['me', 'Mei'] }, PEOPLE, OPTS);
+      const edited = applyEdits({ ...d, warnings: [respelled('new:kai', 'Kay', 'Kai')] }, { paidBy: 'me' }, PEOPLE);
+      expect(edited.warnings).toEqual([]);
+    });
+  });
+
+  it('Step 5 #1 a new person who was only the payer is dropped when the payer changes, so Confirm does not create them', () => {
+    const d = buildExpenseDraft({ ...DINNER, adjustments: undefined, paidBy: 'Kai', participants: ['me', 'Mei'] }, PEOPLE, OPTS);
+    expect(d.newPeople.map((p) => p.name)).toEqual(['Kai']);
+    const edited = applyEdits(d, { paidBy: 'me' }, PEOPLE);
+    expect(edited.newPeople).toEqual([]);
+    const result = finalizeDraft(edited, PEOPLE, { newId: sequentialIds(), now: '2026-11-04T12:00:00.000Z' });
+    expect(result.createdPeople).toEqual([]);
+  });
+
+  it('Step 5 #2 a new person who is still a participant stays when they stop being the payer', () => {
+    const d = buildExpenseDraft({ ...DINNER, adjustments: undefined, paidBy: 'Kai', participants: ['me', 'Kai'] }, PEOPLE, OPTS);
+    expect(applyEdits(d, { paidBy: 'me' }, PEOPLE).newPeople.map((p) => p.name)).toEqual(['Kai']);
+  });
+
+  it('Step 5 #3 a dropped payer loses their CLOSE_NAME warning; other warnings stay', () => {
+    const d = buildExpenseDraft({ ...DINNER, adjustments: undefined, paidBy: 'Aroon', participants: ['me', 'Meg'] }, PEOPLE, OPTS);
+    expect(d.warnings.map((w) => w.suggestion?.name)).toEqual(['Aroon', 'Meg']);
+    const edited = applyEdits(d, { paidBy: 'me' }, PEOPLE);
+    expect(edited.newPeople.map((p) => p.name)).toEqual(['Meg']);
+    expect(edited.warnings.map((w) => w.suggestion?.name)).toEqual(['Meg']);
+  });
+
+  it('Step 5 #4 edits that keep everyone leave newPeople alone', () => {
+    const d = buildExpenseDraft({ ...DINNER, adjustments: undefined, paidBy: 'Kai', participants: ['me', 'Mei'] }, PEOPLE, OPTS);
+    expect(applyEdits(d, { description: 'Lunch' }, PEOPLE).newPeople.map((p) => p.name)).toEqual(['Kai']);
+    const s = buildSettlementDraft({ from: 'Kai', to: 'me', cents: 2000 }, PEOPLE, OPTS);
+    expect(applyEdits(s, { cents: 2500 }, PEOPLE).newPeople.map((p) => p.name)).toEqual(['Kai']);
   });
 
   it('#30 bad replacements and edits for the wrong kind are rejected', () => {

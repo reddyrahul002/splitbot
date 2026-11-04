@@ -87,6 +87,8 @@ describe('POST /api/chat', () => {
     expect(res.status).toBe(503);
     expect(res.body.error.code).toBe('GEMINI_NOT_CONFIGURED');
     expect(res.body.error.message).toMatch(/GEMINI_API_KEY/);
+    // Step 5: the manual form may never be built, so the message doesn't promise it.
+    expect(res.body.error.message).not.toMatch(/form/);
     expect((await request(app).get('/api/people')).status).toBe(200);
   });
 

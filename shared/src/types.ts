@@ -80,7 +80,7 @@ export interface Settlement {
   date: string;
 }
 
-export type DraftWarningCode = 'AMOUNT_NOT_IN_MESSAGE' | 'CLOSE_NAME';
+export type DraftWarningCode = 'AMOUNT_NOT_IN_MESSAGE' | 'CLOSE_NAME' | 'NAME_RESPELLED';
 
 /** A guardrail finding shown on a draft. Warnings never block a draft. */
 export interface DraftWarning {
@@ -88,6 +88,8 @@ export interface DraftWarning {
   message: string;
   /** CLOSE_NAME: the typed `name` looks like existing `person` ("Use Arun"). */
   suggestion?: { name: string; person: Person };
+  /** NAME_RESPELLED: who in the draft the model's spelling refers to. */
+  personId?: PersonId;
 }
 
 /** Prefix of the provisional ids that people who don't exist yet get inside a draft, e.g. `new:kai`. */

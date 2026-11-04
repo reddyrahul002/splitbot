@@ -364,6 +364,96 @@ describe('Step 4 review fixes', () => {
   });
 });
 
+describe('draft dates (Step 5)', () => {
+  const dateOf = (draft: Draft | undefined) => (draft?.kind === 'expense' ? draft.expense.date : draft?.settlement.date);
+
+  // 65
+  it("ignores the model's date when the user mentioned none", async () => {
+    const { ctx } = await agentFixture(dir);
+    const out = runTool('create_expense_draft', { ...DINNER_ARGS, date: '2026-10-27' }, ctx(DINNER_TEXT));
+    expect(dateOf(out.draft)).toBe('2026-11-03');
+    expect(out.result.date).toBe('2026-11-03');
+
+    const payment = runTool('create_settlement_draft', { from: 'Arun', to: 'me', dollars: 20, date: '2026-10-26' }, ctx('Arun paid me back $20'));
+    expect(dateOf(payment.draft)).toBe('2026-11-03');
+  });
+
+  // 66
+  it("keeps the model's date when the user mentioned one", async () => {
+    const { ctx } = await agentFixture(dir);
+    const out = runTool('create_expense_draft', { ...DINNER_ARGS, date: '2026-11-02' }, ctx(`${DINNER_TEXT} yesterday`));
+    expect(dateOf(out.draft)).toBe('2026-11-02');
+
+    const payment = runTool('create_settlement_draft', { from: 'Arun', to: 'me', dollars: 20, date: '2026-11-02' }, ctx('Arun paid me back $20 yesterday'));
+    expect(dateOf(payment.draft)).toBe('2026-11-02');
+  });
+
+  // 67
+  it('a date phrase in any user message in the chat counts, before or after the amount', async () => {
+    const { ctx } = await agentFixture(dir);
+    const followUp = runTool('create_expense_draft', { ...DINNER_ARGS, date: '2026-11-02' }, ctx(`${DINNER_TEXT}\nit was yesterday`));
+    expect(dateOf(followUp.draft)).toBe('2026-11-02');
+
+    const numberInFollowUp = runTool(
+      'create_expense_draft',
+      { ...DINNER_ARGS, date: '2026-11-02' },
+      ctx('Dinner $90 yesterday with Arun\nsplit 3 ways with Mei too, Arun had $12 of drinks'),
+    );
+    expect(dateOf(numberInFollowUp.draft)).toBe('2026-11-02');
+
+    const amountAfterDate = runTool('create_expense_draft', { ...DINNER_ARGS, date: '2026-11-02' }, ctx(`Dinner yesterday with Arun and Mei\n${DINNER_TEXT}`));
+    expect(dateOf(amountAfterDate.draft)).toBe('2026-11-02');
+
+    // The accepted trade-off: an older phrase also lets the model's date through. The card shows it and it can be edited.
+    const earlier = runTool('create_expense_draft', { ...DINNER_ARGS, date: '2026-11-02' }, ctx(`Lunch $20 with Mei yesterday\n${DINNER_TEXT}`));
+    expect(dateOf(earlier.draft)).toBe('2026-11-02');
+  });
+
+  // 68
+  it('a bad date is ignored without a date phrase, and still rejected with one', async () => {
+    const { ctx } = await agentFixture(dir);
+    expect(dateOf(runTool('create_expense_draft', { ...DINNER_ARGS, date: 'soon' }, ctx(DINNER_TEXT)).draft)).toBe('2026-11-03');
+    expect(errorCode(runTool('create_expense_draft', { ...DINNER_ARGS, date: 'soon' }, ctx(`${DINNER_TEXT} yesterday`)).result)).toBe('INVALID_DATE');
+  });
+});
+
+describe('respelled names (Step 5)', () => {
+  const lunch = { ...DINNER_ARGS, description: 'Lunch', totalDollars: 40, adjustments: undefined };
+
+  // 69
+  it('warns when the model respells a name into a new person, using the capitalized name', async () => {
+    const { ctx } = await agentFixture(dir);
+    const out = runTool('create_expense_draft', { ...lunch, participants: ['me', 'mowlya'] }, ctx('Lunch $40 split with molya'));
+    expect(out.draft?.warnings).toEqual([{ code: 'NAME_RESPELLED', message: "You typed 'molya', using 'Mowlya'", personId: 'new:mowlya' }]);
+    expect(out.result.warnings).toEqual(["You typed 'molya', using 'Mowlya'"]);
+  });
+
+  // 70
+  it('warns when the model silently corrects a name to an existing person', async () => {
+    const { ctx } = await agentFixture(dir);
+    const out = runTool('create_expense_draft', { ...lunch, participants: ['me', 'Arun'] }, ctx('Lunch $40 split with Aroon'));
+    expect(out.draft?.warnings).toEqual([{ code: 'NAME_RESPELLED', message: "You typed 'Aroon', using 'Arun'", personId: 'arun' }]);
+  });
+
+  // 71
+  it('says nothing when the name is what the user wrote, whatever the case', async () => {
+    const { ctx } = await agentFixture(dir);
+    expect(runTool('create_expense_draft', DINNER_ARGS, ctx(DINNER_TEXT)).draft?.warnings).toEqual([]);
+    const lower = runTool('create_expense_draft', { ...lunch, participants: ['me', 'Arun'] }, ctx('Lunch $40 split with arun'));
+    expect(lower.draft?.warnings).toEqual([]);
+  });
+
+  // 72
+  it('covers the payer and settlements', async () => {
+    const { ctx } = await agentFixture(dir);
+    const payer = runTool('create_expense_draft', { ...lunch, paidBy: 'Arun', participants: ['me', 'Arun'] }, ctx('Lunch $40, Aroon paid, split with me'));
+    expect(payer.draft?.warnings.map((w) => w.message)).toEqual(["You typed 'Aroon', using 'Arun'"]);
+
+    const payment = runTool('create_settlement_draft', { from: 'Arun', to: 'me', dollars: 20 }, ctx('Aroon paid me back $20'));
+    expect(payment.draft?.warnings.map((w) => w.message)).toEqual(["You typed 'Aroon', using 'Arun'"]);
+  });
+});
+
 describe('create_settlement_draft', () => {
   // 12
   it('builds a settlement draft, and rejects paying yourself', async () => {

@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { Person } from '@splitbot/shared';
 import {
+  capitalizeName,
   checkAmounts,
   checkNames,
   currentExpenseMessages,
   extractNumbers,
   findCloseName,
+  hasDatePhrase,
   levenshtein,
+  respelledNames,
   splitWays,
   unnamedPeople,
 } from '../src/domain/guardrails';
@@ -312,6 +315,133 @@ describe('splitWays (Step 4)', () => {
     expect(splitWays('two-way radio $40, split with Arun')).toBeNull();
     expect(splitWays('3 way adapter, split it 2 ways')).toBe(2);
     expect(splitWays('split 3-ways')).toBe(3);
+  });
+});
+
+describe('hasDatePhrase (Step 5)', () => {
+  it.each([
+    'Dinner $90 yesterday',
+    'Lunch today',
+    'Uber tomorrow',
+    "today's lunch",
+    'Dinner last night',
+    'Coffee this morning',
+    'Rent last month',
+    'Hotel last week',
+    'Pizza on Friday',
+    'pizza FRIDAY',
+    'Dinner last fri',
+    'Lunch on tue',
+    'Taxi 3 days ago',
+    'Taxi a week ago',
+    'Dinner on 27/10',
+    'Dinner 27/10/2026',
+    'Dinner 10-27-2026',
+    'Dinner 2026-10-27',
+    'Dinner Oct 27',
+    'Dinner 27 October',
+    'Dinner 27th of oct',
+    'Dinner on the 3rd',
+    'Flights in March',
+    'Dinner 27-10 $40',
+    'Dinner 27.10 $40',
+    'Dinner on 3rd',
+    'Dinner on 27/10, $40',
+  ])('#89 "%s" has a date phrase', (text) => {
+    expect(hasDatePhrase(text)).toBe(true);
+  });
+
+  it.each([
+    '',
+    'Dinner $90, I paid, split with Arun and Mei, Arun had $12 of drinks',
+    'rent 1800 split 60/40 with Arun',
+    'dinner 50/50 with Mei',
+    'tickets $150 split 2:1 with Mei',
+    '$90 dinner, 7:30pm',
+    'Uber $24 Mei paid split 3 ways',
+    'Birthday dinner $50 with Mei',
+    'Sat with Mei, coffee $20',
+    'Lunch with Jan and April, $30',
+    'we may split it, $30',
+    'Lunch $40, nowadays with Arun',
+    'rent 60-40 with Arun',
+    'split 60.40',
+    'Coffee $27.10',
+    'Lunch $12.25 with Mei',
+    'Coffee 12.5',
+    'Lunch 12.25 with Mei',
+    'Parking 9.99',
+    'tickets 1.5:1 with Mei',
+    'Rent 1,800.10 with Arun',
+  ])('#90 "%s" has none', (text) => {
+    expect(hasDatePhrase(text)).toBe(false);
+  });
+});
+
+describe('respelledNames (Step 5)', () => {
+  it('#91 a name that is only a close spelling of what the user wrote is reported', () => {
+    expect(respelledNames(['me', 'mowlya'], 'Lunch $20 with molya')).toEqual([{ typed: 'molya', used: 'mowlya' }]);
+  });
+
+  it("#92 keeps the user's own casing for what they typed", () => {
+    expect(respelledNames(['Mowlya'], 'Lunch $20 with Molya')).toEqual([{ typed: 'Molya', used: 'Mowlya' }]);
+  });
+
+  it('#93 a name the user wrote is not reported, whatever the case or possessive', () => {
+    expect(respelledNames(['Arun', 'MEI'], "Arun's lunch with mei")).toEqual([]);
+    expect(respelledNames(['Mary Jane'], 'Lunch with mary jane')).toEqual([]);
+  });
+
+  it('#94 the user is never reported, and each name is reported once', () => {
+    expect(respelledNames(['me', 'Rahul'], 'Lunch with Rahil', 'Rahul')).toEqual([]);
+    expect(respelledNames(['Mowlya', 'mowlya'], 'with molya')).toEqual([{ typed: 'molya', used: 'Mowlya' }]);
+  });
+
+  it('#95 no close word means nothing to report (UNNAMED_PERSON covers that)', () => {
+    expect(respelledNames(['Kai'], 'Lunch $20 with Arun')).toEqual([]);
+    expect(respelledNames(['Mei'], 'split with me')).toEqual([]);
+  });
+
+  it('#96 a nickname expanded by the prefix rule is reported', () => {
+    expect(respelledNames(['Robert'], 'Lunch with Rob')).toEqual([{ typed: 'Rob', used: 'Robert' }]);
+  });
+
+  it('#99 a hyphenated name written by the user is not reported', () => {
+    expect(respelledNames(['Anne-Marie'], 'Lunch with Anne-Marie')).toEqual([]);
+    expect(respelledNames(['Jean-Luc'], 'Lunch with jean-luc')).toEqual([]);
+    expect(respelledNames(['Anne-Marie'], "Anne-Marie's lunch")).toEqual([]);
+  });
+
+  it('#100 straight and curly apostrophes are the same', () => {
+    expect(respelledNames(["O'Brien"], 'Lunch with O’Brien')).toEqual([]);
+    expect(respelledNames(['O’Brien'], "Lunch with O'Brien")).toEqual([]);
+    expect(respelledNames(["O'Brien"], 'O’Brien’s lunch')).toEqual([]);
+  });
+
+  it('#101 a real respelling of a hyphenated name is reported as one word', () => {
+    expect(respelledNames(['Anne-Marie'], 'Lunch with Anne-Mari')).toEqual([{ typed: 'Anne-Mari', used: 'Anne-Marie' }]);
+  });
+
+  it('#102 each part of a hyphenated word still names someone', () => {
+    expect(unnamedPeople(['Anne-Marie'], 'Lunch with Anne-Marie')).toEqual([]);
+    expect(unnamedPeople(['Marie'], 'Lunch with Anne-Marie')).toEqual([]);
+    expect(respelledNames(['Mei'], 'Arun-Mei split')).toEqual([]);
+  });
+});
+
+describe('capitalizeName (Step 5)', () => {
+  it('#97 capitalizes the first letter of each word and trims', () => {
+    expect(capitalizeName('mowlya')).toBe('Mowlya');
+    expect(capitalizeName(' kai ')).toBe('Kai');
+    expect(capitalizeName('mary jane')).toBe('Mary Jane');
+    expect(capitalizeName('anne-marie')).toBe('Anne-Marie');
+    expect(capitalizeName('élodie')).toBe('Élodie');
+  });
+
+  it('#98 leaves the other letters as typed', () => {
+    expect(capitalizeName('McDonald')).toBe('McDonald');
+    expect(capitalizeName('MEI')).toBe('MEI');
+    expect(capitalizeName('')).toBe('');
   });
 });
 

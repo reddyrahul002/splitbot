@@ -126,23 +126,80 @@ const NOT_NAMES = new Set(
  * Each missing name is returned once, trimmed, in the order given.
  */
 export function unnamedPeople(names: string[], text: string, meName?: string): string[] {
-  const words = (normalizeName(text).match(/[\p{L}\p{M}]+(?:['’][\p{L}\p{M}]+)*/gu) ?? [])
-    .map((w) => w.replace(/['’]s$/u, ''))
-    .filter((w) => !NOT_NAMES.has(w));
-  const phrase = ` ${words.join(' ')} `;
+  return compareWithText(names, text, meName)
+    .filter((name) => !name.exact && name.closeWord === null)
+    .map((name) => name.raw);
+}
+
+/**
+ * The names the model changed: not written exactly in `text`, the user's own messages, but a close spelling is ("molya"
+ * passed as "mowlya"). `typed` keeps the user's casing. Differences in case alone aren't reported.
+ */
+export function respelledNames(names: string[], text: string, meName?: string): { typed: string; used: string }[] {
+  return compareWithText(names, text, meName).flatMap((name) =>
+    !name.exact && name.closeWord !== null ? [{ typed: name.closeWord, used: name.raw }] : [],
+  );
+}
+
+/** Each distinct name (other than the user), once, and how it compares with the words in `text`. */
+function compareWithText(names: string[], text: string, meName?: string): { raw: string; exact: boolean; closeWord: string | null }[] {
+  const plain = (s: string) => normalizeName(s).replaceAll('’', "'");
+  // A hyphenated name is one word, so "Anne-Mari" is reported whole. Its parts still count as written ("Marie").
+  const words = (text.normalize('NFC').match(/[\p{L}\p{M}]+(?:['’-][\p{L}\p{M}]+)*/gu) ?? [])
+    .map((w) => w.replace(/['’]s$/iu, ''))
+    .filter((w) => !NOT_NAMES.has(normalizeName(w)));
+  const phrase = ` ${words.map(plain).flatMap((w) => (w.includes('-') ? [w, w.replaceAll('-', ' ')] : [w])).join(' ')} `;
   const asPeople = words.map((w, i) => ({ id: `word${i}`, name: w }));
-  const self = new Set([ME_ID, ...(meName === undefined ? [] : [normalizeName(meName)])]);
+  const self = new Set([ME_ID, ...(meName === undefined ? [] : [plain(meName)])]);
 
   const seen = new Set<string>();
-  const missing: string[] = [];
+  const compared: { raw: string; exact: boolean; closeWord: string | null }[] = [];
   for (const raw of names) {
-    const n = normalizeName(raw).replace(/\s+/gu, ' ');
+    const n = plain(raw).replace(/\s+/gu, ' ');
     if (n === '' || self.has(n) || seen.has(n)) continue;
     seen.add(n);
-    const written = phrase.includes(` ${n} `) || findCloseName(n, asPeople) !== null;
-    if (!written) missing.push(raw.trim());
+    compared.push({ raw: raw.trim(), exact: phrase.includes(` ${n} `), closeWord: findCloseName(n, asPeople)?.name ?? null });
   }
-  return missing;
+  return compared;
+}
+
+const MONTHS = 'january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sept|sep|october|oct|november|nov|december|dec';
+const ORDINAL = '(?:st|nd|rd|th)';
+
+const DATE_PHRASE = new RegExp(
+  [
+    '\\b(?:today|tonight|yesterday|tomorrow|ago)\\b',
+    '\\b(?:last|this)\\s+(?:night|morning|afternoon|evening|week|weekend|month|year)\\b',
+    '\\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\\b',
+    // Short days and bare months need a lead-in: "I sat with Mei" and "Lunch with April" aren't dates.
+    '\\b(?:on|last|this)\\s+(?:mon|tues?|wed|thu|thurs?|fri|sat|sun)\\b',
+    `\\b(?:in|on|last|this)\\s+(?:${MONTHS})\\b`,
+    `\\b\\d{1,2}${ORDINAL}?(?:\\s+of)?\\s+(?:${MONTHS})\\b`,
+    `\\b(?:${MONTHS})\\s+\\d{1,2}${ORDINAL}?\\b`,
+    `\\b(?:the|on)\\s+\\d{1,2}${ORDINAL}\\b`,
+    '\\b\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}\\b',
+    '\\b\\d{1,2}[-./]\\d{1,2}[-./]\\d{2,4}\\b',
+  ].join('|'),
+  'iu',
+);
+
+/** "27/10", "27-10" or "27.10", not part of an amount ("$27.10", "1,800.10") or a ratio ("1.5:1"). */
+const DAY_MONTH = /(?<![$\d.,/-])(\d{1,2})([-/.])(\d{1,2})(?![:\d]|[-./]\d)/g;
+
+/**
+ * Whether the user mentioned a date ("yesterday", "last Friday", "27/10", "Oct 27"). The model's date is only used if
+ * so, because it invents them. "27/10" needs a possible day and month, so "60/40" isn't a date. With a dot it must read
+ * day.month with a two-digit month, because "12.5" and "12.25" are amounts. A false match just keeps the model's date,
+ * so this leans towards matching.
+ */
+export function hasDatePhrase(text: string): boolean {
+  if (DATE_PHRASE.test(text)) return true;
+  return [...text.matchAll(DAY_MONTH)].some((m) => {
+    const [a, b] = [Number(m[1]), Number(m[3])];
+    if (a < 1 || b < 1) return false;
+    if (m[2] === '.') return m[3]!.length === 2 && a <= 31 && b <= 12;
+    return Math.max(a, b) <= 31 && Math.min(a, b) <= 12;
+  });
 }
 
 /**
@@ -174,4 +231,9 @@ export function splitWays(text: string): number | null {
 /** How names are compared everywhere: NFC, trimmed, lowercase. */
 export function normalizeName(name: string): string {
   return name.normalize('NFC').trim().toLowerCase();
+}
+
+/** A new person's display name: "mary-jane" → "Mary-Jane". Only first letters change, so "McDonald" stays as typed. */
+export function capitalizeName(name: string): string {
+  return name.trim().replace(/(^|[\s-])(\p{L})/gu, (_, before: string, letter: string) => before + letter.toUpperCase());
 }

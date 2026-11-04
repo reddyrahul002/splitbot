@@ -21,6 +21,7 @@ The repo is empty, so this is a new build.
 splitbot/
   package.json            # workspaces: shared, server, client; "dev" runs both via concurrently
   shared/src/types.ts     # Person, Expense, Settlement, Draft, Balance, Transfer, ChatMessage, Category
+  shared/src/money.ts     # toCents, formatCents, describeCents (moved from the server in Step 5, so the client converts the same way)
   server/
     src/index.ts          # entry point: loads config, CORS, opens the store, listen
     src/config.ts         # loads the repo-root .env (whatever the start folder); startup line without values
@@ -37,8 +38,11 @@ splitbot/
     test/*.test.ts        # vitest
   client/ (Vite + React + TS)
     src/App.tsx           # two-pane layout: Chat (left) | Tabs: Balances · Settle up · Insights · History (right)
-    src/components/Chat.tsx, DraftCard.tsx, Balances.tsx, SettleUp.tsx, Insights.tsx, History.tsx
+    src/components/Chat.tsx, DraftCard.tsx, Markdown.tsx, Balances.tsx, SettleUp.tsx, Insights.tsx, History.tsx
     src/api.ts            # fetch wrappers
+    src/draftLogic.ts     # pure helpers for the chat and draft card (input checks, edit queue, history)
+    src/markdown.ts       # bold, italic and lists for chat replies; plain data, never raw HTML
+    test/*.test.ts(x)     # vitest: pure logic, fetch wrappers, markdown rendering
   .env.example            # GEMINI_API_KEY, GEMINI_MODEL (default gemini-3.5-flash-lite, free tier; gemini-2.5-flash is closed to new keys)
 ```
 Dependencies: express, cors, dotenv, @google/genai, zod, nanoid; vitest, tsx, concurrently; client: react, recharts.
@@ -406,6 +410,54 @@ Prerequisite: Step 3 is committed. `create_expense_draft` calls the same `buildE
 
 ### Done when
 `npm test`, `npm run typecheck` and the manual curl check pass, then stop for review. After approval, run the eval and report; the user runs `/review-step` and commits.
+
+## Step 5 detail: Chat UI, DraftCard, confirm flow
+Prerequisite: Step 4 is committed. Chat is the only panel for now; Step 6 adds the right-hand pane.
+
+### Files
+| File | Contents |
+|---|---|
+| `package.json` | adds the `client` workspace; `dev` runs server and client with `concurrently`; `test` runs every workspace |
+| `client/package.json`, `tsconfig.json`, `index.html`, `src/main.tsx`, `src/App.tsx`, `src/styles.css` | Vite + React. `App` holds the people list and refetches it after each reply and confirm |
+| `client/vite.config.ts` | proxies `/api` to the server; reads only `PORT*` from the root `.env`, so the Gemini key never reaches Vite |
+| `client/src/api.ts` | fetch wrappers; every failure is an `ApiRequestError { status, code, message }` |
+| `client/src/draftLogic.ts` | `parseDollars`, `inputProblem`, `confirmIfValid`, `replaceEditFor`, `buildHistory`, `createEditQueue` (pure) |
+| `client/src/markdown.ts`, `client/src/components/Markdown.tsx` | parse model replies into plain data and render them as React text |
+| `client/src/components/Chat.tsx`, `DraftCard.tsx` | see the rules below |
+| `shared/src/types.ts` | adds `NAME_RESPELLED` and `DraftWarning.personId` |
+| `server/src/domain/guardrails.ts` | adds `hasDatePhrase`, `respelledNames`, `capitalizeName` (tests first) |
+| `server/src/agent/tools.ts` | both create-draft tools apply the date rule and add `NAME_RESPELLED` |
+| `shared/src/money.ts`, `server/src/domain/money.ts` | helpers moved to shared; the server file re-exports them, so its imports and `money.test.ts` are unchanged |
+| `server/src/drafts.ts` | `applyEdits` drops new people no longer in the draft and handles `NAME_RESPELLED`; new people get capitalized names |
+| `server/src/app.ts` | `GEMINI_NOT_CONFIGURED` no longer mentions the form |
+| `client/test/api.test.ts`, `draftLogic.test.ts`, `markdown.test.tsx` | written first; confirmed to fail before the implementation existed |
+
+### Rules
+- **Draft edits:** text fields commit on blur or Enter, selects on change. The card shows what the server returns. Text that doesn't change the value sends nothing, so retyping "90" over "$90.00" doesn't clear an amount warning. A rejected edit shows the error and puts the last good value back.
+- **Edit then Confirm:** a card's edits run one at a time, and Confirm waits for what's in flight. After a failed edit (any edit the server rejects, including "Use Arun" and the dropdowns), the first Confirm stops and shows the error, even if the rejection arrived before the click. A second click confirms the values shown, and a later successful edit also clears the failure. Inputs aren't disabled while an edit saves, because disabling a button between mouse down and up loses the click.
+- **Invalid input (review fix):** an amount that isn't a positive whole number of cents, or an empty description, stays in the input with its error, and Confirm doesn't save until it's fixed. `confirmIfValid` checks what's typed at that moment, so it doesn't depend on blur.
+- **"Use Arun":** `replaceEditFor` finds the new person by name (trimmed, case-insensitive, NFC) and sends `replace`. No match, no button.
+- **Expired drafts:** `DRAFT_NOT_FOUND` shows the server's message, locks the fields and removes the buttons.
+- **Orphan people:** a new person who was only the payer is dropped when the payer changes, along with their `CLOSE_NAME` warning, so Confirm doesn't create them. They also leave the payer list for that draft.
+- **Chat errors:** the four `GEMINI_*` errors show the server's message word for word. No response, or one that isn't our JSON (the proxy with the server down), shows "Can't reach the server. Is it running?". The busy reply is a normal 200 reply. A failed message leaves the history and goes back in the input box.
+- **History sent:** the last 50 messages, starting on a user message, each capped at 4000 characters (the `/api/chat` limits).
+- **Dates (walkthrough and review fix):** in both create-draft tools, the model's date is used only if `hasDatePhrase` finds a date phrase in any user message in the chat; otherwise the draft uses today. `27/10`, `27-10`, `27.10` and "on 3rd" count; `60-40`, `60.40`, `$27.10` and `12.25` don't.
+- **Respelled names (walkthrough and review fix):** `respelledNames` finds payer, participant, `from` and `to` names that aren't written exactly in the user's messages but have a close spelling there. A hyphenated name is one word and curly apostrophes count as straight ones, so Anne-Marie, jean-luc and O’Brien give no warning. Each adds `NAME_RESPELLED` (`personId`, message "You typed 'molya', using 'Mowlya'"). Agent path only; kept through amount edits, removed when the person leaves the draft. No button.
+- **Capitalized names (walkthrough fix):** `capitalizeName` runs when the draft is built, on new people only.
+- **Markdown (walkthrough fix):** model replies render bold, italic and lists via `client/src/markdown.ts` and `components/Markdown.tsx`, as React text only. No raw HTML, links, headings or code.
+- **Example chips (walkthrough fix):** above the input, shown only until the first message.
+
+### Test cases (written first)
+**client `draftLogic`:** 1–2 `parseDollars` accepted and rejected · 3–5 `replaceEditFor` (match, case/spacing/accents, nothing to swap) · 6–9 `buildHistory` (short, limit, starts on user, text cap) · 10–15 `createEditQueue` (order, idle, waits, failure in flight, a finished failure stops the first Confirm only, throw)
+**client `api`:** 16 each of the 4 Gemini codes keeps its code and message · 17 network failure · 18 non-JSON error · 19 JSON without the error shape, HTML 200 · 20 chat request · 21 draft routes · 22 empty 204 · 23 `DRAFT_NOT_FOUND` keeps its code
+**server `drafts`:** Step 5 #1 payer-only new person dropped · #2 still a participant stays · #3 their warning goes, others stay · #4 other edits keep new people
+**server `chat-api`:** #40 also checks the 503 message doesn't mention the form
+**walkthrough fixes, server:** guardrails #89–#90 `hasDatePhrase`, #91–#96 `respelledNames`, #97–#98 `capitalizeName` · drafts Step 5 #5 capitalized new people, #6–#8 `NAME_RESPELLED` kept or removed on edits, #25 expects `Constructor` · tools #65–#68 dates, #69–#72 respelled names
+**walkthrough fixes, client:** `markdown` #24–#25 inline, #26–#29 blocks, #30–#32 rendering, including raw HTML staying text
+**review fixes:** client `draftLogic` #33–#35 `inputProblem`, #36–#40 `confirmIfValid` · guardrails #89–#90 gain the new date forms, #99–#102 hyphens and apostrophes · tools #67 now expects a date phrase in any message to count · client #14 reversed, #41–#43 queue failures, #44 first Confirm stops after a finished rejection and the second saves
+
+### Done when
+`npm test`, `npm run typecheck` and a curl check through the Vite proxy pass, then stop for the user's browser walkthrough (Verification below, steps 1–3 and 7, plus edits, Discard and the Gemini error messages). The user runs `/review-step` and commits.
 
 ## Verification
 - **Unit tests (vitest)**, run with `npm test -w server`:

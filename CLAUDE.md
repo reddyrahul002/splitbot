@@ -10,18 +10,20 @@ SplitBot is a Splitwise-style web app. You type expenses in plain English, and a
 1. **The LLM never does arithmetic.** Gemini only extracts structure: payer, participants, amounts, itemized adjustments and category. Deterministic TypeScript in `server/src/domain/` computes every share, balance and transfer.
 2. **All money is integer cents.** Convert at the boundary with `toCents` / `formatCents`. Leftover cents are distributed in a deterministic order, so shares always add up exactly to the total.
 3. **Every write goes through a draft.** Tools create drafts, the UI shows them, and nothing is saved until the user clicks Confirm. Read-only questions are answered directly from tool results.
-4. **The agent is bounded.** At most 5 tool calls per user message. If names, the payer or amounts are unclear, it asks a clarifying question instead of guessing. When no payer is mentioned at all, the payer is me. Guardrails add warnings to drafts: an amount that isn't in the user's messages, or a name close to an existing person.
+4. **The agent is bounded.** At most 5 tool calls per user message. If names, the payer or amounts are unclear, it asks a clarifying question instead of guessing. When no payer is mentioned at all, the payer is me. Guardrails add warnings to drafts: an amount that isn't in the user's messages, a name close to an existing person, or a name the model respelled from what the user typed (`NAME_RESPELLED`). The model's date is used only if a date phrase appears in a user message in the chat; otherwise the draft uses today.
 
 ## Repo layout
 ```
 shared/src/types.ts       # types shared by server and client
+shared/src/money.ts       # toCents, formatCents (server/src/domain/money.ts re-exports them)
 server/src/index.ts       # Express app + routes
 server/src/store.ts       # JSON file store (data/db.json), atomic writes
 server/src/drafts.ts      # in-memory drafts with TTL
-server/src/domain/        # split, balances, settle, summary, guardrails, money (pure functions)
+server/src/domain/        # split, balances, settle, summary, guardrails (pure functions)
 server/src/agent/         # Gemini tools, loop, system prompt
 server/test/              # vitest
 client/src/               # React app: Chat, DraftCard, Balances, SettleUp, Insights, History
+client/test/              # vitest (pure logic and fetch wrappers)
 ```
 
 ## How we work

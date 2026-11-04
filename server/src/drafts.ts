@@ -16,7 +16,7 @@ import {
   type SettlementDraftInput,
   type SplitMeta,
 } from '@splitbot/shared';
-import { checkAmounts, checkNames, normalizeName } from './domain/guardrails';
+import { capitalizeName, checkAmounts, checkNames, normalizeName } from './domain/guardrails';
 import { describeCents } from './domain/money';
 import { computeShares, SplitError } from './domain/split';
 import { assertDate } from './domain/summary';
@@ -117,7 +117,7 @@ function nameResolver(people: Person[]) {
     const existing = people.find((p) => normalizeName(p.name) === n);
     if (existing) return existing.id;
     const id = `${NEW_PERSON_PREFIX}${n}`;
-    if (!newPeople.some((p) => p.id === id)) newPeople.push({ id, name: name.trim() });
+    if (!newPeople.some((p) => p.id === id)) newPeople.push({ id, name: capitalizeName(name) });
     return id;
   };
   const resolveMap = (map: Record<string, number> | undefined): Record<PersonId, number> | undefined => {
@@ -257,8 +257,9 @@ function draftPeople(draft: Draft): Set<PersonId> {
 
 /**
  * Returns the edited draft (same id) with shares recomputed. Throws DraftError/SplitError and leaves `draft` unchanged
- * if an edit is invalid. CLOSE_NAME warnings are kept only for new people who remain; an amount edit clears
- * AMOUNT_NOT_IN_MESSAGE warnings, because the user typed the new amount themselves.
+ * if an edit is invalid. New people no longer in the draft are dropped. CLOSE_NAME and NAME_RESPELLED warnings are kept
+ * only for people who remain; an amount edit clears AMOUNT_NOT_IN_MESSAGE warnings, because the user typed the new amount
+ * themselves.
  */
 export function applyEdits(draft: Draft, edits: DraftEdits, people: Person[]): Draft {
   const isExpense = draft.kind === 'expense';
@@ -308,11 +309,17 @@ export function applyEdits(draft: Draft, edits: DraftEdits, people: Person[]): D
     next = { ...draft, settlement, newPeople };
   }
 
+  // A new person no longer in the draft (e.g. the payer was changed) must not be created on Confirm.
+  const stillInDraft = draftPeople(next);
+  next.newPeople = newPeople.filter((p) => stillInDraft.has(p.id));
+
   const amountEdited = edits.totalCents !== undefined || edits.cents !== undefined;
-  const remaining = new Set(newPeople.map((p) => normalizeName(p.name)));
-  next.warnings = draft.warnings.filter((w) =>
-    w.code === 'CLOSE_NAME' ? remaining.has(normalizeName(w.suggestion?.name ?? '')) : !amountEdited,
-  );
+  const remaining = new Set(next.newPeople.map((p) => normalizeName(p.name)));
+  next.warnings = draft.warnings.filter((w) => {
+    if (w.code === 'CLOSE_NAME') return remaining.has(normalizeName(w.suggestion?.name ?? ''));
+    if (w.code === 'NAME_RESPELLED') return w.personId !== undefined && stillInDraft.has(w.personId);
+    return !amountEdited;
+  });
   return next;
 }
 

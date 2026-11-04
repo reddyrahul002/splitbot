@@ -34,6 +34,50 @@ MONGODB_URI=<your Atlas connection string>
 
 The free Atlas tier (512 MB) is enough; it's what this was checked on. Data goes in a database named `splitbot`, which starts empty; there is no import from `db.json`. If `STORE=mongo` has no URI, the server won't start, rather than saving to the JSON file by mistake.
 
+### Lock it with a passcode
+Set `APP_PASSCODE` in `.env` and the app asks for it before showing anything; every `/api` route needs it. Leave it empty for local dev. The passcode is kept for the tab and clears when the tab closes.
+
+## Deploy
+The frontend goes on Vercel and the API on one Render instance, both on free tiers, with data in MongoDB Atlas. Vercel forwards `/api/*` to Render, so the browser only ever talks to one address. Do Render first, because Vercel needs its URL.
+
+### 1. MongoDB Atlas
+Create a free cluster and copy its connection string. Under Network Access, allow Render: either its outbound IPs (Render's Connect menu lists them) or `0.0.0.0/0`, which relies on the database password alone.
+
+### 2. Render: new Web Service
+| Setting | Value |
+|---|---|
+| Root Directory | Leave blank, because the lockfile is at the repo root |
+| Runtime and instance | Node, Free |
+| Region | Closest to your Atlas cluster |
+| Build Command | `npm ci --omit=dev -w @splitbot/server` |
+| Start Command | `npm start -w @splitbot/server` |
+| Health Check Path | `/healthz` |
+
+Environment variables:
+
+| Variable | Value |
+|---|---|
+| `APP_PASSCODE` | A long random value, from `openssl rand -base64 24`. Secret |
+| `GEMINI_API_KEY` | Your key. Secret |
+| `MONGODB_URI` | Your Atlas connection string. Secret |
+| `STORE` | `mongo` |
+| `GEMINI_MODEL` | `gemini-3.5-flash-lite` |
+| `NODE_VERSION` | `22` |
+| `TZ` | `Australia/Melbourne`, or your own zone. Default draft dates use it |
+
+Don't set `PORT`, because Render supplies it. In production, the server refuses to start without `APP_PASSCODE` or with any `STORE` other than `mongo`, so a missing setting shows up as a failed deploy.
+
+Once it's live, `https://<your-service>.onrender.com/healthz` should answer `{"ok":true}`, and `/api/people` should answer 401.
+
+### 3. Vercel: new project
+1. In `client/vercel.json`, replace `YOUR-RENDER-SERVICE` with your Render service name, and commit it. Vercel doesn't document environment variables in rewrite destinations, so the URL lives in this file. It isn't a secret; the passcode protects the API.
+2. Import the repo, and set Root Directory to `client`.
+3. Keep "Include files outside the root directory in the Build Step" on, because the client imports `shared/`.
+4. Add no environment variables. The passcode and keys stay on Render and never reach the browser.
+
+### 4. Check it
+Open the Vercel URL. A wrong passcode should be refused and the right one should open the app. Then add an expense, confirm it, and reload. The free Render service sleeps after 15 minutes idle, so the first visit shows "Waking up the server…" for about a minute.
+
 ## Tests and eval
 ```sh
 npm test            # all server and client tests; no key or real database needed
@@ -54,7 +98,7 @@ npm run eval -w server -- 2 7 --repeat 3     # chosen cases, 3 times each, to se
 - **Agent (`server/src/agent/`):** a Gemini function-calling loop, capped at 5 tool calls per message. It asks a question when something is unclear, and guardrails check the model's output before a draft reaches you.
 - **Money logic (`server/src/domain/`):** pure functions compute every share, balance and transfer in integer cents. The model never does this arithmetic.
 - **Writes:** tools create in-memory drafts with a 30-minute expiry, and an expense or payment is saved only when you click Confirm. Data is stored in one JSON file with atomic writes through a queue, or in MongoDB with one transaction per save. Either way, routes read an in-memory cache that changes only after a write succeeds.
-- **Client (`client/src/`):** account summary, tabs (Settle up, Expenses, Charts, Groups) and chat, as three columns on desktop, two with a chat drawer on tablets, and one with a bottom tab bar on phones. The Vite proxy forwards `/api` to the server, and the Gemini key stays on the server.
+- **Client (`client/src/`):** account summary, tabs (Settle up, Expenses, Charts, Groups) and chat, as three columns on desktop, two with a chat drawer on tablets, and one with a bottom tab bar on phones. The Vite proxy forwards `/api` to the server in development and a Vercel rewrite does in production, and the Gemini key stays on the server.
 
 ## Key decisions
 [DECISIONS.md](DECISIONS.md) starts with a [summary](DECISIONS.md#summary) of the main decisions and of where the AI got things wrong, followed by the full log. The main decisions are:
@@ -70,8 +114,10 @@ The full build history is in [docs/ai-sessions/](docs/ai-sessions/).
 ## Known limitations
 - **A payment can be counted twice.** A payment recorded outside a group lowers the overall balance but not the group's, so the group keeps suggesting it. Following that suggestion records it twice. The app warns about this but doesn't prevent it; deleting the extra payment in Expenses undoes it.
 - **Adding an expense needs Gemini.** There is no manual expense form, so the UI can't add an expense without a working key and available quota.
-- **Local, single user.** There is no login or deployment, and a host with an ephemeral disk would lose the JSON file.
-- **The API must run as a single instance.** With MongoDB, instances see each other's saved data on their next request, but drafts live in one instance's memory. If Confirm reaches a different instance from the one that made the draft, it answers "draft not found". The planned deploy is therefore the frontend on Vercel and the API on one Render instance, with Vercel rewriting `/api/*` to Render.
+- **Single user, one shared passcode.** There are no accounts. Ten wrong passcodes in 15 minutes lock everyone out for the rest of that window, including you, so anyone with the URL could lock you out, though a long random passcode can't practically be guessed.
+- **Rate limits live in memory.** The chat limit (10 a minute, 80 a day) resets when the server restarts, which on Render's free tier is often. Google's quota is the real cap.
+- **Render's free tier sleeps.** The first visit after 15 idle minutes takes about a minute. A sleep or restart also loses open drafts, which then show as expired; saved data is safe in Atlas.
+- **The API must run as a single instance.** With MongoDB, instances see each other's saved data on their next request, but drafts live in one instance's memory. If Confirm reaches a different instance from the one that made the draft, it answers "draft not found". So the API runs on one Render instance.
 - **An unresponsive database slows every request.** Each `/api` request checks MongoDB first. When a connection went silent in a test, the first request waited about 20 seconds and later ones about 5 seconds each before answering from cached data. Saves failed after about 10 seconds.
 - **MongoDB keeps everything in memory.** `snapshot()` is synchronous, so each instance loads all data when it starts or sees a change. The date and `groupId` indexes are only used by date-filtered summaries from the API, and the UI and the agent don't send those yet.
 - **A lost commit reply can still duplicate an expense.** If a save fails and the app also can't read back whether it committed, it reports a failure. Retrying could then save a second copy, which you can delete in Expenses.

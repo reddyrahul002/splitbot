@@ -104,7 +104,7 @@ Chat history lives in client state and is sent with each request; the server is 
 - `POST /api/drafts` creates an expense or settlement draft from name-based input (the same builder the agent's tools use). The manual form fallback and Settle up's "Record" use it, so every write goes through a draft and the app still works when Gemini is unavailable.
 - `PATCH /api/drafts/:id` applies edits and returns the recomputed draft without saving.
 - `POST /api/drafts/:id/confirm` (optionally with edited fields; shares are recomputed on the server) → saved record. `DELETE /api/drafts/:id` discards a draft.
-- `GET /api/people`, `GET /api/expenses`, `DELETE /api/expenses/:id`, `GET /api/settlements`, `DELETE /api/settlements/:id`, `GET /api/balances`, `GET /api/settlements/suggest`, `GET /api/summary?from&to`
+- `GET /api/people`, `GET /api/expenses`, `DELETE /api/expenses/:id`, `GET /api/settlements`, `DELETE /api/settlements/:id`, `GET /api/balances`, `GET /api/settlements/suggest`, `GET /api/settlements/plan`, `GET /api/account`, `GET /api/summary?from&to`
 
 ## Frontend
 - **Chat**: message list, input box and example-prompt chips.
@@ -471,7 +471,7 @@ Prerequisite: Step 5 is committed. Each part ends with `npm test`, `npm run type
 
 ### Parts
 - **A: Layout + account summary.** Three columns, tab shell, `directDebts`, `accountSummary`, `GET /api/account`, `get_balances` switched to `directDebts`, single refetch in `useAppData`.
-- **B: Smart settle up.** Totals, transfers from `suggestSettlements`, "Record payment" (settlement draft + Confirm), payments-saved note.
+- **B: Smart settle up.** Totals, transfers from `suggestSettlements`, "Record payment" (settlement draft + Confirm, one open at a time), payments-saved note. `settlePlan` in `domain/account.ts` and `GET /api/settlements/plan` supply the transfers and the saving, compared with the `directDebts` count.
 - **C: Expenses.** Expenses and settlements newest first, category and person filters, two-click delete. A category filter hides settlements, which have no category.
 - **D: Charts.** Recharts, after loading the `dataviz` skill: spending by category (horizontal bar) and by month (bar) with a "My share / Group total" toggle, and balance per person (bar). Values stay in cents; `formatCents` formats ticks and tooltips.
 - **E (the user decides after D): Groups.** `Group { id, name, memberIds }`, optional `groupId` on expenses and settlements (a group payment must reduce the group's balance), optional `groups` in the store so old files load unchanged, a Groups tab and a Group dropdown on the draft card. The agent gets no group support.

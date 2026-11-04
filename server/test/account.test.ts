@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Person, PersonId } from '@splitbot/shared';
-import { accountSummary } from '../src/domain/account';
-import { computeBalances } from '../src/domain/balances';
+import { accountSummary, settlePlan } from '../src/domain/account';
+import { computeBalances, directDebts } from '../src/domain/balances';
+import { suggestSettlements } from '../src/domain/settle';
 import { expense, randInt, rng, settlement } from './helpers';
 
 const PEOPLE: Person[] = [
@@ -14,6 +15,63 @@ const PEOPLE: Person[] = [
 const DINNER = expense('me', { me: 2600, arun: 3800, mei: 2600 });
 const LUNCH = expense('mei', { mei: 1500, arun: 1500 });
 const GAS = expense('kai', { kai: 2500, me: 2500 });
+
+describe('settlePlan', () => {
+  it('#118 browser data: three transfers instead of four direct debts saves one payment', () => {
+    expect(settlePlan(PEOPLE, [DINNER, LUNCH, GAS], [])).toEqual({
+      transfers: [
+        { from: 'arun', to: 'me', cents: 3900 },
+        { from: 'arun', to: 'kai', cents: 1400 },
+        { from: 'mei', to: 'kai', cents: 1100 },
+      ],
+      directDebtCount: 4,
+      paymentsSaved: 1,
+    });
+  });
+
+  it('#119 no records: nothing to pay and nothing saved', () => {
+    expect(settlePlan(PEOPLE, [], [])).toEqual({ transfers: [], directDebtCount: 0, paymentsSaved: 0 });
+  });
+
+  it('#120 once everything is paid, the plan is empty even though raw pairwise debts remain', () => {
+    const paid = [settlement('arun', 'me', 5300), settlement('mei', 'me', 1100)];
+    expect(settlePlan(PEOPLE, [DINNER, LUNCH], paid)).toEqual({ transfers: [], directDebtCount: 0, paymentsSaved: 0 });
+  });
+
+  it('#121 one debt is one payment, so nothing is saved', () => {
+    expect(settlePlan(PEOPLE, [expense('me', { arun: 500 })], [])).toEqual({
+      transfers: [{ from: 'arun', to: 'me', cents: 500 }],
+      directDebtCount: 1,
+      paymentsSaved: 0,
+    });
+  });
+
+  it('#122 when the greedy list is longer than the direct debts, the saving is 0 and not negative', () => {
+    const people: Person[] = ['me', 'a', 'b', 'c', 'x', 'y'].map((id) => ({ id, name: id }));
+    const expenses = [expense('y', { a: 400 }), expense('x', { b: 300 }), expense('x', { c: 300 })];
+    const plan = settlePlan(people, expenses, []);
+    expect(plan.directDebtCount).toBe(3);
+    expect(plan.transfers).toHaveLength(4);
+    expect(plan.paymentsSaved).toBe(0);
+  });
+
+  it('#123 seeded random loop: transfers come from suggestSettlements, and the saving is never negative', () => {
+    const rand = rng(5);
+    const ids = PEOPLE.map((p) => p.id);
+    for (let run = 0; run < 300; run++) {
+      const expenses = Array.from({ length: randInt(rand, 0, 8) }, () => {
+        const shares: Record<PersonId, number> = {};
+        for (const id of ids) if (rand() < 0.6) shares[id] = randInt(rand, 0, 100_000);
+        return expense(ids[randInt(rand, 0, ids.length - 1)]!, shares);
+      });
+
+      const plan = settlePlan(PEOPLE, expenses, []);
+      expect(plan.transfers).toEqual(suggestSettlements(computeBalances(PEOPLE, expenses, [])));
+      expect(plan.directDebtCount).toBe(directDebts(PEOPLE, expenses, []).length);
+      expect(plan.paymentsSaved).toBe(Math.max(0, plan.directDebtCount - plan.transfers.length));
+    }
+  });
+});
 
 describe('accountSummary', () => {
   it('#110 totals, counts and net for the browser data', () => {

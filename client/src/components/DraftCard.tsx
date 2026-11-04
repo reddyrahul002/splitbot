@@ -63,7 +63,14 @@ function Select(props: { label: string; value: string; disabled: boolean; onChan
   );
 }
 
-export function DraftCard({ draft: initial, people, onSaved }: { draft: Draft; people: Person[]; onSaved: () => void }) {
+export function DraftCard(props: {
+  draft: Draft;
+  people: Person[];
+  onSaved: () => void;
+  /** Called after Discard, and offered as a Close button on an expired draft. Without it the card stays in place. */
+  onClose?: () => void;
+}) {
+  const { draft: initial, people, onSaved, onClose } = props;
   const [draft, setDraft] = useState(initial);
   const [status, setStatus] = useState<Status>('open');
   const [error, setError] = useState<string | null>(null);
@@ -142,6 +149,7 @@ export function DraftCard({ draft: initial, people, onSaved }: { draft: Draft; p
       await discardDraft(draft.id);
       setStatus('discarded');
       setError(null);
+      onClose?.();
     } catch (err) {
       fail(err);
     } finally {
@@ -277,6 +285,14 @@ export function DraftCard({ draft: initial, people, onSaved }: { draft: Draft; p
           </button>
           <button type="button" disabled={finishing} onClick={discard}>
             Discard
+          </button>
+        </div>
+      )}
+
+      {status === 'expired' && onClose && (
+        <div className="actions">
+          <button type="button" onClick={onClose}>
+            Close
           </button>
         </div>
       )}

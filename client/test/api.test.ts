@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiRequestError, confirmDraft, discardDraft, editDraft, getAccount, getPeople, sendChat, UNREACHABLE_MESSAGE } from '../src/api';
+import { ApiRequestError, confirmDraft, createDraft, discardDraft, editDraft, getAccount, getPeople, getSettlePlan, sendChat, UNREACHABLE_MESSAGE } from '../src/api';
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -40,6 +40,32 @@ describe('getAccount', () => {
   it('#46 a dead server gives the unreachable message', async () => {
     stubFetch(new TypeError('fetch failed'));
     expect((await failure(() => getAccount())).message).toBe(UNREACHABLE_MESSAGE);
+  });
+});
+
+describe('settle-up wrappers', () => {
+  it('#63 getSettlePlan asks /api/settlements/plan', async () => {
+    const plan = { transfers: [{ from: 'arun', to: 'me', cents: 500 }], directDebtCount: 1, paymentsSaved: 0 };
+    const fetchMock = stubFetch(json(200, plan));
+    await expect(getSettlePlan()).resolves.toEqual(plan);
+    expect(fetchMock.mock.calls[0]).toEqual(['/api/settlements/plan', undefined]);
+  });
+
+  it('#64 createDraft posts the request as JSON', async () => {
+    const fetchMock = stubFetch(json(201, { id: 'd1', kind: 'settlement' }));
+    const body = { kind: 'settlement' as const, from: 'Arun', to: 'Me', cents: 500 };
+    await expect(createDraft(body)).resolves.toMatchObject({ id: 'd1' });
+    expect(fetchMock.mock.calls[0]).toEqual([
+      '/api/drafts',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+    ]);
+  });
+
+  it('#65 createDraft shows the server message word for word', async () => {
+    stubFetch(json(400, { error: { code: 'SAME_PERSON', message: 'A payment needs two different people.' } }));
+    const err = await failure(() => createDraft({ kind: 'settlement', from: 'Arun', to: 'Arun', cents: 500 }));
+    expect(err.code).toBe('SAME_PERSON');
+    expect(err.message).toBe('A payment needs two different people.');
   });
 });
 

@@ -1,6 +1,14 @@
-// The user's account summary, built on the balance functions. All values are integer cents.
-import { ME_ID, type Account, type AccountPerson, type Expense, type Person, type Settlement } from '@splitbot/shared';
+// The user's account summary and settle-up plan, built on the balance functions. All values are integer cents.
+import { ME_ID, type Account, type AccountPerson, type Expense, type Person, type Settlement, type SettlePlan } from '@splitbot/shared';
 import { computeBalances, directDebts } from './balances';
+import { suggestSettlements } from './settle';
+
+/** Suggested transfers and the payments they save over paying each direct debt. Greedy can be longer, so the floor is 0. */
+export function settlePlan(people: Person[], expenses: Expense[], settlements: Settlement[]): SettlePlan {
+  const transfers = suggestSettlements(computeBalances(people, expenses, settlements));
+  const directDebtCount = directDebts(people, expenses, settlements).length;
+  return { transfers, directDebtCount, paymentsSaved: Math.max(0, directDebtCount - transfers.length) };
+}
 
 /** Totals and one row per other person, from the debts that involve me. Positive means they owe me. */
 export function accountSummary(people: Person[], expenses: Expense[], settlements: Settlement[]): Account {

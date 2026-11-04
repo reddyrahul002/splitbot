@@ -229,6 +229,55 @@ describe('balances, settle-up and summary', () => {
     expect(await readFile(dbPath, 'utf8')).toBe(before);
   });
 
+  it('#124 GET /api/settlements/plan: empty at first, then the dinner, and it writes nothing', async () => {
+    const { app } = await setup();
+    const empty = await request(app).get('/api/settlements/plan');
+    expect(empty.status).toBe(200);
+    expect(empty.body).toEqual({ transfers: [], directDebtCount: 0, paymentsSaved: 0 });
+
+    await confirm(app, (await createDraft(app)).id);
+    const before = await readFile(dbPath, 'utf8');
+    const res = await request(app).get('/api/settlements/plan');
+    expect(res.body).toEqual({
+      transfers: [
+        { from: 'arun', to: 'me', cents: 3800 },
+        { from: 'mei', to: 'me', cents: 2600 },
+      ],
+      directDebtCount: 2,
+      paymentsSaved: 0,
+    });
+    expect(await readFile(dbPath, 'utf8')).toBe(before);
+  });
+
+  it('#125 recording a payment by display name: "Me" is not taken for Mei, and nothing is saved before Confirm', async () => {
+    const { app } = await setup();
+    await confirm(app, (await createDraft(app)).id);
+
+    const draft = await createDraft(app, { kind: 'settlement', from: 'Arun', to: 'Me', cents: 3800 });
+    expect(draft.kind === 'settlement' && draft.settlement).toMatchObject({ from: 'arun', to: 'me', cents: 3800 });
+    expect(draft.warnings).toEqual([]);
+    expect(draft.newPeople).toEqual([]);
+    expect((await request(app).get('/api/settlements/plan')).body.transfers).toHaveLength(2);
+
+    await confirm(app, draft.id);
+    expect((await request(app).get('/api/settlements/plan')).body.transfers).toEqual([{ from: 'mei', to: 'me', cents: 2600 }]);
+    const account = (await request(app).get('/api/account')).body;
+    expect(account).toMatchObject({ owedCents: 2600, owedCount: 1, netCents: 2600 });
+  });
+
+  it('#126 an edited amount records a partial payment and leaves the remainder', async () => {
+    const { app } = await setup();
+    await confirm(app, (await createDraft(app)).id);
+
+    const draft = await createDraft(app, { kind: 'settlement', from: 'Arun', to: 'Me', cents: 3800 });
+    await request(app).patch(`/api/drafts/${draft.id}`).send({ cents: 1000 });
+    await confirm(app, draft.id);
+    expect((await request(app).get('/api/settlements/plan')).body.transfers).toEqual([
+      { from: 'arun', to: 'me', cents: 2800 },
+      { from: 'mei', to: 'me', cents: 2600 },
+    ]);
+  });
+
   it('#43 dinner → balances and pairwise debts', async () => {
     const { app } = await setup();
     await confirm(app, (await createDraft(app)).id);

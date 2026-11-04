@@ -153,6 +153,44 @@ select:disabled {
   color: #991b1b;
 }
 
+.totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e7e5e4;
+}
+
+.totals p {
+  margin: 0;
+}
+
+.transfers {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.transfer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #e7e5e4;
+}
+
+.transfer-row button {
+  flex-shrink: 0;
+  color: #1c1917;
+}
+
+.savings {
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+
 .tab-list {
   display: flex;
   flex-wrap: wrap;

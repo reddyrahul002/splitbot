@@ -1,8 +1,7 @@
 import { formatCents, type Account, type AccountPerson, type Person } from '@splitbot/shared';
+import { signedCents, tone } from '../display';
 
 const peopleCount = (count: number) => (count === 1 ? '1 person' : `${count} people`);
-
-const tone = (cents: number) => (cents > 0 ? 'owes-me' : cents < 0 ? 'i-owe' : 'settled');
 
 function personText({ netCents }: AccountPerson): string {
   if (netCents > 0) return `owes you ${formatCents(netCents)}`;
@@ -34,11 +33,7 @@ export function AccountSummary({ account, people, error }: { account: Account | 
         {account.oweCount > 0 && ` to ${peopleCount(account.oweCount)}`}
       </p>
       <p className={`net ${tone(account.netCents)}`}>
-        Net balance{' '}
-        <strong>
-          {account.netCents > 0 && '+'}
-          {formatCents(account.netCents)}
-        </strong>
+        Net balance <strong>{signedCents(account.netCents)}</strong>
       </p>
       {account.people.length === 0 ? (
         <p className="hint">No one to show yet. Add an expense in the chat.</p>

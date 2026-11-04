@@ -192,6 +192,14 @@ export interface Account {
   people: AccountPerson[];
 }
 
+/** GET /api/settlements/plan: suggested payments, and how they compare with paying each direct debt separately. */
+export interface SettlePlan {
+  transfers: Transfer[];
+  directDebtCount: number;
+  /** Never negative: 0 when the suggested list isn't shorter than the direct debts. */
+  paymentsSaved: number;
+}
+
 /** Spending for one bucket: one person's share and the group total. */
 export interface SpendRow {
   myCents: number;

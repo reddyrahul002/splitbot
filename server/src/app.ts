@@ -14,7 +14,7 @@ import {
   type Settlement,
 } from '@splitbot/shared';
 import { GeminiRequestError } from './agent/gemini';
-import { accountSummary } from './domain/account';
+import { accountSummary, settlePlan } from './domain/account';
 import { computeBalances, pairwiseDebts } from './domain/balances';
 import { suggestSettlements } from './domain/settle';
 import { SplitError } from './domain/split';
@@ -192,6 +192,11 @@ export function createApp(deps: AppDeps): express.Express {
   app.get('/api/settlements/suggest', (_req, res) => {
     const { people, expenses, settlements } = store.snapshot();
     res.json(suggestSettlements(computeBalances(people, expenses, settlements)));
+  });
+
+  app.get('/api/settlements/plan', (_req, res) => {
+    const { people, expenses, settlements } = store.snapshot();
+    res.json(settlePlan(people, expenses, settlements));
   });
 
   app.delete('/api/settlements/:id', async (req, res) => {

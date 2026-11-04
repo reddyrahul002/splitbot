@@ -4,7 +4,7 @@
   "private": true,
   "description": "Splitwise-style expense splitting driven by plain-English chat and a Gemini agent",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19"
   },
   "workspaces": [
     "shared",

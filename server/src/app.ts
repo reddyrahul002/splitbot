@@ -25,7 +25,7 @@ import { normalizeName } from './domain/guardrails';
 import { SplitError } from './domain/split';
 import { spendingSummary } from './domain/summary';
 import { applyEdits, buildExpenseDraft, buildSettlementDraft, DraftError, finalizeDraft, joinGroup, type DraftStore } from './drafts';
-import type { Store } from './store';
+import { StoreConflictError, type Store } from './store';
 
 export interface AppDeps {
   store: Store;
@@ -133,6 +133,11 @@ function newestFirst<T extends { date: string }>(items: T[], tiebreak: (item: T)
 export function createApp(deps: AppDeps): express.Express {
   const { store, drafts, today, now = Date.now, log = (m) => console.error(m), agent } = deps;
   const app = express();
+  // Routes read the store's cache synchronously, so another instance's writes are picked up before they run.
+  app.use('/api', async (_req, _res, next) => {
+    await store.refresh();
+    next();
+  });
   app.use(express.json());
 
   const send = (res: Response, status: number, body?: unknown) => (body === undefined ? res.status(status).end() : res.status(status).json(body));
@@ -288,10 +293,11 @@ export function createApp(deps: AppDeps): express.Express {
     res.json(group);
   });
 
-  app.get('/api/summary', (req: Request, res) => {
+  app.get('/api/summary', async (req: Request, res) => {
     const { from, to } = SummaryQuerySchema.parse(req.query);
     try {
-      res.json(spendingSummary(store.snapshot().expenses, { from, to }));
+      const expenses = from === undefined && to === undefined ? store.snapshot().expenses : await store.findExpenses({ from, to });
+      res.json(spendingSummary(expenses, { from, to }));
     } catch (err) {
       if (err instanceof RangeError) throw new HttpError(400, 'INVALID_DATE', err.message);
       throw err;
@@ -308,6 +314,7 @@ export function createApp(deps: AppDeps): express.Express {
       res.status(status).json(body);
     };
     if (err instanceof HttpError) return fail(err.status, err.code, err.message);
+    if (err instanceof StoreConflictError) return fail(409, 'STORE_CONFLICT', err.message);
     if (err instanceof GeminiRequestError) {
       // The detail (status and Google's message) is for the log; the response says what to fix.
       log(err.message);

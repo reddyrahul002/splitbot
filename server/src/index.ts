@@ -1,4 +1,4 @@
-// Server entry point: loads .env, opens the JSON store and starts the API.
+// Server entry point: loads .env, opens the store (JSON or Mongo) and starts the API.
 import { resolve } from 'node:path';
 import cors from 'cors';
 import express from 'express';
@@ -8,7 +8,8 @@ import { runAgent } from './agent/loop';
 import { createApp } from './app';
 import { describeEnv, loadEnv, localToday, REPO_ROOT } from './config';
 import { createDraftStore } from './drafts';
-import { openStore } from './store';
+import { gracefulShutdown } from './shutdown';
+import { openConfiguredStore, storeConfigFromEnv } from './store-select';
 
 // Load config before reading any env var.
 console.log(describeEnv(loadEnv()));
@@ -18,7 +19,7 @@ const dbPath = resolve(REPO_ROOT, process.env.DB_PATH || 'server/data/db.json');
 const port = Number(process.env.PORT ?? 3001);
 const today = localToday;
 
-const store = await openStore(dbPath);
+const store = await openConfiguredStore(storeConfigFromEnv(process.env, dbPath));
 const drafts = createDraftStore();
 
 // Without a key the rest of the API still works; /api/chat answers 503.
@@ -31,6 +32,17 @@ console.log(client ? `Chat: Gemini model ${model}` : 'Chat: off (no GEMINI_API_K
 const server = express();
 server.use(cors({ origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/] }));
 server.use(createApp({ store, drafts, today, agent }));
-server.listen(port, () => {
-  console.log(`SplitBot API on http://localhost:${port} (data: ${dbPath})`);
+const listener = server.listen(port, () => {
+  console.log(`SplitBot API on http://localhost:${port} (data: ${store.path})`);
 });
+
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(signal, () => {
+    gracefulShutdown({
+      closeServer: () => new Promise((resolve) => listener.close(() => resolve())),
+      closeStore: () => store.close(),
+      exit: (code) => process.exit(code),
+      log: (message) => console.error(message),
+    });
+  });
+}

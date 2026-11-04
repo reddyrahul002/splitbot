@@ -6,7 +6,7 @@ SplitBot is a Splitwise-style web app that you drive with plain-English chat. Fo
 Constraints:
 - About 1.5 days to build, $0 cost (Gemini free tier).
 - TypeScript throughout: Node + Express backend, React frontend.
-- Single user, no login. Data lives in a JSON file. Runs locally. Free deployment is a stretch goal.
+- Single user, no login. Data lives in a JSON file by default, or MongoDB Atlas with `STORE=mongo` (Step 9). Runs locally. Free deployment is a stretch goal (Step 8).
 
 The repo is empty, so this is a new build.
 
@@ -26,7 +26,10 @@ splitbot/
     src/index.ts          # entry point: loads config, CORS, opens the store, listen
     src/config.ts         # loads the repo-root .env (whatever the start folder); startup line without values
     src/app.ts            # createApp(deps): Express routes + JSON error handler (testable with supertest)
-    src/store.ts          # JSON file store (server/data/db.json): in-memory cache, atomic write (tmp + rename), serialized write queue
+    src/store.ts          # Store interface; JSON file store (server/data/db.json): in-memory cache, atomic write (tmp + rename), serialized write queue
+    src/store-mongo.ts    # MongoDB store (Step 9): the same interface, with a cache, transactions and a revision check
+    src/store-select.ts   # picks the store from STORE and MONGODB_URI (Step 9)
+    src/shutdown.ts       # closes the server and store on a signal; forced exit after 10 seconds (Step 9)
     src/domain/split.ts   # computeShares(): equal | exact | percent | shares, plus itemized adjustments
     src/domain/balances.ts# net balances, pairwise "who owes whom"
     src/domain/settle.ts  # greedy settle-up (at most n−1 transfers): largest creditor vs largest debtor
@@ -105,7 +108,7 @@ Chat history lives in client state and is sent with each request; the server is 
 - Default currency is $.
 - When asked about money, quote the numbers from tool results only.
 
-## REST API (server/src/index.ts)
+## REST API (server/src/app.ts)
 - `POST /api/chat` `{ messages }` → `{ reply, drafts }`
 - `POST /api/drafts` creates an expense or settlement draft from name-based input (the same builder the agent's tools use). The manual form fallback and Settle up's "Record" use it, so every write goes through a draft and the app still works when Gemini is unavailable.
 - `PATCH /api/drafts/:id` applies edits and returns the recomputed draft without saving.
@@ -143,7 +146,8 @@ Each step ends with `npm test` passing and a commit. After each step I stop for 
 - **Step 5: Chat UI + DraftCard + confirm flow** (Day 1 evening). The dinner example works end to end in the browser, and warnings and "Use Arun" are visible.
 - **Step 6: Three-column layout, account summary, Smart settle up, Expenses, Charts, optional Groups** (Day 2 morning). Merges the essentials of the old Steps 6 and 7; built in parts A–E. See "Step 6 detail" below.
 - **Step 7: Polish** (Day 2 morning). README with setup steps, and DECISIONS.md brought up to date. Cut for time: the manual expense form fallback (via `POST /api/drafts` + confirm) and the README screenshots.
-- **Step 8 (stretch): Deploy** the server to Render and the client to Vercel. Render's free tier has an ephemeral disk, so the JSON file would reset on restart; document this or move to a free hosted database.
+- **Step 8 (stretch): Deploy.** Frontend on Vercel. API on Render as a single instance, with `STORE=mongo` and data in Atlas, because Render's free tier has an ephemeral disk that would reset the JSON file. Vercel rewrites `/api/*` to the Render service, so the browser still calls its own origin, with no CORS change. The single instance matters because drafts are in memory (#M15); drafts open during a restart are lost.
+- **Step 9: MongoDB Atlas store.** Built before the Step 8 deploy; the number keeps Step 8 stable. See "Step 9 detail" below.
 
 ## Step 1 detail: shared types + split engine
 Prerequisite: Step 0 is committed. Step 1 also adds the `workspaces` field to the root `package.json` and replaces the placeholder `npm test` with the real vitest run. (npm fails if a listed workspace folder doesn't exist, so Step 0 can't declare them yet.)
@@ -485,6 +489,32 @@ Prerequisite: Step 5 is committed. Each part ends with `npm test`, `npm run type
 
 ### Browser data (scratch `DB_PATH`)
 Dinner $90: I paid, split with Arun and Mei, Arun had $12 of drinks. Lunch $30: Mei paid, split with Arun. Gas $50: Kai paid, split with me. Expected: owed $64.00 from 2 people, owe $25.00 to 1 person, net +$39.00; Arun $38 and Mei $26 green, Kai $25 red.
+
+## Step 9 detail: MongoDB Atlas store
+`STORE=json|mongo` picks the store; JSON stays the default. `STORE=mongo` without `MONGODB_URI`, or any other value, stops startup instead of falling back. Cut for time: the db.json migration script (the user starts with fresh data) and `explain()` index tests.
+
+### Files
+| File | Contents |
+|---|---|
+| `server/src/store.ts` | `Store` gains `findExpenses`, `findSettlements`, `refresh` and `close`; `StoreError`, `StoreConflictError` |
+| `server/src/store-mongo.ts` | `openMongoStore(uri, { dbName?, log?, hooks? })`: cache, transactions, revision check, uncertain-commit check. Collections `meta`, `people`, `expenses`, `settlements`, `groups`; database `splitbot` |
+| `server/src/store-select.ts` | `storeConfigFromEnv`, `openConfiguredStore`; loads the driver only in Mongo mode |
+| `server/src/app.ts` | `/api` middleware awaits `store.refresh()`; `/api/summary` with a range uses `findExpenses`; `StoreConflictError` → 409 `STORE_CONFLICT` |
+| `server/src/index.ts`, `server/src/shutdown.ts`, `.env.example` | Use the selector, close the server and store on a signal with a forced exit after 10 seconds (#D); `STORE=json`, empty `MONGODB_URI` |
+| `server/test/store.contract.test.ts`, `store-api.contract.test.ts` | The same cases against both stores (#S, #A) |
+| `server/test/store-mongo.test.ts`, `store-select.test.ts`, `env-example.test.ts` | Mongo-only behaviour (#M), selection (#SEL), URI guards |
+| `server/test/mongo-helper.ts`, `store-harness.ts` | `MongoMemoryReplSet` (transactions need a replica set) and one way to drive either store |
+
+### Rules
+- **Cache:** `snapshot()` is sync, so the Mongo store keeps all data in memory and the cache changes only after a commit.
+- **Other instances:** every `/api` request first reads `meta.revision`; the cache reloads only if it differs. If the check fails, the request answers from the cache. A write from stale data is refused (409) and the draft is restored.
+- **All-or-nothing:** `fn` runs once, before the transaction, and one transaction takes the revision and applies every change.
+- **Uncertain commits:** each transaction records its id in `meta.recentTxnIds`. After an error, that says whether it committed.
+- **Secrets:** errors and logs hold only the driver error's type and code, never its message or the URI.
+- **Timeouts:** `serverSelectionTimeoutMS` and `connectTimeoutMS` 5 s, `socketTimeoutMS` 15 s, `waitQueueTimeoutMS` 5 s, `maxCommitTimeMS` 10 s. No `timeoutMS`, which the driver has deprecated and ignores (#M20).
+
+### Done when
+`npm test` and `npm run typecheck` pass, existing test files have additions only, and two real server processes on one local `mongod` agree. The real Atlas check is the user's, with their own URI (done: connect, confirm, restart).
 
 ## Verification
 - **Unit tests (vitest)**, run with `npm test -w server`:

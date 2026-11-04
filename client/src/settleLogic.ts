@@ -1,11 +1,15 @@
 // Pure helpers for the Smart settle up tab. The transfers and the saving are computed on the server.
 import { formatCents, ME_ID, type DraftRequest, type Person, type SettlePlan, type Transfer } from '@splitbot/shared';
 
+/** "Arun pays you", "You pay Kai" or "Arun pays Kai". */
+export function transferLabel({ from, to }: Transfer, nameOf: (id: string) => string): string {
+  if (from === ME_ID) return `You pay ${nameOf(to)}`;
+  return `${nameOf(from)} pays ${to === ME_ID ? 'you' : nameOf(to)}`;
+}
+
 /** "Arun pays you $20.00", "You pay Kai $20.00" or "Arun pays Kai $14.00". */
-export function transferText({ from, to, cents }: Transfer, nameOf: (id: string) => string): string {
-  const amount = formatCents(cents);
-  if (from === ME_ID) return `You pay ${nameOf(to)} ${amount}`;
-  return `${nameOf(from)} pays ${to === ME_ID ? 'you' : nameOf(to)} ${amount}`;
+export function transferText(transfer: Transfer, nameOf: (id: string) => string): string {
+  return `${transferLabel(transfer, nameOf)} ${formatCents(transfer.cents)}`;
 }
 
 /** The note under the list, or null when the list saves nothing. */

@@ -1,7 +1,15 @@
 import { useState } from 'react';
-import { CATEGORIES, formatCents, type Category, type Expense, type Person, type Settlement } from '@splitbot/shared';
+import { ReceiptText, SearchX, Trash2, Users } from 'lucide-react';
+import { CATEGORIES, formatCents, type Category, type Expense, type Group, type Person, type Settlement } from '@splitbot/shared';
 import { ApiRequestError, deleteExpense, deleteSettlement } from '../api';
+import { useOpenChat } from '../chatOpener';
+import { shortDate } from '../display';
 import { expenseDetail, filterHistory, mergeHistory, settlementText, type HistoryItem } from '../history';
+import { CategoryChip } from './CategoryChip';
+import { EmptyState } from './EmptyState';
+import { Skeleton } from './Skeleton';
+import { useToast } from './Toast';
+import { TransferAvatars } from './TransferAvatars';
 
 const keyOf = (item: HistoryItem) => (item.kind === 'expense' ? `expense:${item.expense.id}` : `settlement:${item.settlement.id}`);
 
@@ -9,27 +17,41 @@ const keyOf = (item: HistoryItem) => (item.kind === 'expense' ? `expense:${item.
 export function HistoryRow(props: {
   item: HistoryItem;
   people: Person[];
+  /** To name the group on the badge. */
+  groups?: Group[];
   confirming: boolean;
   busy: boolean;
   onAsk: () => void;
   onCancel: () => void;
   onDelete: () => void;
 }) {
-  const { item, people, confirming, busy, onAsk, onCancel, onDelete } = props;
+  const { item, people, groups = [], confirming, busy, onAsk, onCancel, onDelete } = props;
   const nameOf = (id: string) => people.find((p) => p.id === id)?.name ?? 'Unknown';
+  const record = item.kind === 'expense' ? item.expense : item.settlement;
   const title = item.kind === 'expense' ? item.expense.description : settlementText(item.settlement, nameOf);
-  const details = item.kind === 'expense' ? expenseDetail(item.expense, nameOf) : [item.settlement.date, 'Payment'];
+  const [, , paidBy, share] = item.kind === 'expense' ? expenseDetail(item.expense, nameOf) : [];
   const cents = item.kind === 'expense' ? item.expense.totalCents : item.settlement.cents;
+  const groupName = groups.find((g) => g.id === record.groupId)?.name;
 
   return (
     <li className="history-row">
+      {item.kind === 'expense' ? <CategoryChip category={item.expense.category} iconOnly /> : <TransferAvatars from={item.settlement.from} to={item.settlement.to} people={people} />}
       <div className="history-main">
         <div className="history-title">
           <span>{title}</span>
-          <strong>{formatCents(cents)}</strong>
+          {groupName && (
+            <span className="badge group">
+              <Users aria-hidden="true" />
+              {groupName}
+            </span>
+          )}
         </div>
-        <div className="history-detail">{details.join(' · ')}</div>
+        <div className="history-detail">
+          {paidBy ?? 'Payment'} · {shortDate(record.date)}
+        </div>
+        {share && <div className="history-detail">{share}</div>}
       </div>
+      <strong className="history-amount">{formatCents(cents)}</strong>
       <div className="history-actions">
         {confirming ? (
           <>
@@ -41,7 +63,8 @@ export function HistoryRow(props: {
             </button>
           </>
         ) : (
-          <button type="button" disabled={busy} onClick={onAsk}>
+          <button type="button" className="with-icon" disabled={busy} onClick={onAsk}>
+            <Trash2 aria-hidden="true" />
             Delete
           </button>
         )}
@@ -54,15 +77,18 @@ export function Expenses(props: {
   expenses: Expense[] | null;
   settlements: Settlement[] | null;
   people: Person[];
+  groups?: Group[];
   error: string | null;
   onChange: () => void;
 }) {
-  const { expenses, settlements, people, error, onChange } = props;
+  const { expenses, settlements, people, groups, error, onChange } = props;
   const [category, setCategory] = useState<Category | ''>('');
   const [personId, setPersonId] = useState('');
   const [confirmingKey, setConfirmingKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const openChat = useOpenChat();
+  const toast = useToast();
 
   if (!expenses || !settlements) {
     return error ? (
@@ -70,7 +96,7 @@ export function Expenses(props: {
         {error}
       </p>
     ) : (
-      <p className="hint">Loading…</p>
+      <Skeleton />
     );
   }
 
@@ -82,8 +108,11 @@ export function Expenses(props: {
       setDeleteError(null);
       setConfirmingKey(null);
       onChange();
+      toast('success', item.kind === 'expense' ? 'Expense deleted' : 'Payment deleted');
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setDeleteError(message);
+      toast('error', message);
       // It's already gone (say, deleted in another window): show the list as it is now.
       if (err instanceof ApiRequestError && err.code === 'NOT_FOUND') {
         setConfirmingKey(null);
@@ -131,9 +160,19 @@ export function Expenses(props: {
       )}
 
       {all.length === 0 ? (
-        <p className="hint">No expenses yet. Add one in the chat.</p>
+        <EmptyState icon={ReceiptText} title="No expenses yet." body="Add one in the chat." action={{ label: 'Add an expense', onClick: openChat }} />
       ) : shown.length === 0 ? (
-        <p className="hint">Nothing matches these filters.</p>
+        <EmptyState
+          icon={SearchX}
+          title="Nothing matches these filters."
+          action={{
+            label: 'Clear filters',
+            onClick: () => {
+              setCategory('');
+              setPersonId('');
+            },
+          }}
+        />
       ) : (
         <ul className="history">
           {shown.map((item) => (
@@ -141,6 +180,7 @@ export function Expenses(props: {
               key={keyOf(item)}
               item={item}
               people={people}
+              groups={groups}
               confirming={confirmingKey === keyOf(item)}
               busy={busy}
               onAsk={() => setConfirmingKey(keyOf(item))}

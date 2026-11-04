@@ -1,8 +1,13 @@
-import { useState, type FormEvent } from 'react';
-import type { GroupSummary, Person } from '@splitbot/shared';
+import { useRef, useState, type FormEvent } from 'react';
+import { UsersRound } from 'lucide-react';
+import { ME_ID, type GroupSummary, type Person } from '@splitbot/shared';
 import { addGroupMember, createGroup } from '../api';
 import { addablePeople, memberBalanceText } from '../groupLogic';
+import { Avatar } from './Avatar';
+import { EmptyState } from './EmptyState';
 import { SettleUp } from './SettleUp';
+import { Skeleton } from './Skeleton';
+import { useToast } from './Toast';
 
 export function Groups(props: { groups: GroupSummary[] | null; people: Person[]; error: string | null; onChange: () => void }) {
   const { groups, people, error, onChange } = props;
@@ -11,6 +16,8 @@ export function Groups(props: { groups: GroupSummary[] | null; people: Person[];
   const [memberId, setMemberId] = useState('');
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const nameInput = useRef<HTMLInputElement>(null);
+  const toast = useToast();
 
   if (!groups) {
     return error ? (
@@ -18,7 +25,7 @@ export function Groups(props: { groups: GroupSummary[] | null; people: Person[];
         {error}
       </p>
     ) : (
-      <p className="hint">Loading…</p>
+      <Skeleton />
     );
   }
 
@@ -32,7 +39,9 @@ export function Groups(props: { groups: GroupSummary[] | null; people: Person[];
       setActionError(null);
       onChange();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setActionError(message);
+      toast('error', message);
     } finally {
       setBusy(false);
     }
@@ -62,7 +71,7 @@ export function Groups(props: { groups: GroupSummary[] | null; people: Person[];
       <form className="group-form" onSubmit={create}>
         <label className="field">
           <span>New group</span>
-          <input value={name} maxLength={60} placeholder="Trip to Bali" disabled={busy} onChange={(e) => setName(e.target.value)} />
+          <input ref={nameInput} value={name} maxLength={60} placeholder="Trip to Bali" disabled={busy} onChange={(e) => setName(e.target.value)} />
         </label>
         <button type="submit" disabled={busy || !name.trim()}>
           Create group
@@ -76,7 +85,12 @@ export function Groups(props: { groups: GroupSummary[] | null; people: Person[];
       )}
 
       {!current ? (
-        <p className="hint">No groups yet. Create one to track a trip or a household on its own.</p>
+        <EmptyState
+          icon={UsersRound}
+          title="No groups yet."
+          body="Create one to track a trip or a household on its own."
+          action={{ label: 'Name your first group', onClick: () => nameInput.current?.focus() }}
+        />
       ) : (
         <>
           <label className="field group-picker">
@@ -122,7 +136,10 @@ export function Groups(props: { groups: GroupSummary[] | null; people: Person[];
             <h2>Balances in this group</h2>
             <ul className="group-balances">
               {current.balances.map((balance) => (
-                <li key={balance.personId}>{memberBalanceText(balance, nameOf)}</li>
+                <li key={balance.personId}>
+                  <Avatar name={nameOf(balance.personId)} isYou={balance.personId === ME_ID} size="sm" />
+                  <span>{memberBalanceText(balance, nameOf)}</span>
+                </li>
               ))}
             </ul>
           </section>

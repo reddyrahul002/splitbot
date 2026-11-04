@@ -1,8 +1,12 @@
 import { useState, type ReactNode } from 'react';
+import { ChartColumn, ChartPie, CircleCheck } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { formatCents, type Account, type Person, type SpendingSummary } from '@splitbot/shared';
 import { axisLabel, balanceDomain, balanceRows, categoryRows, monthRows, shortName, spendTotal, type ChartRow, type SpendMode } from '../chartData';
+import { useOpenChat } from '../chatOpener';
 import { debtText, signedCents } from '../display';
+import { EmptyState } from './EmptyState';
+import { Skeleton } from './Skeleton';
 
 // Tokens, so a theme switch needs no re-render. The pair passed scripts/validate_palette.js from the dataviz skill in both themes.
 const OWES_ME = 'var(--chart-owes)';
@@ -129,6 +133,7 @@ export function Charts(props: {
 }) {
   const { summary, account, people, error, initialMode = 'mine' } = props;
   const [mode, setMode] = useState<SpendMode>(initialMode);
+  const openChat = useOpenChat();
 
   if (!summary || !account) {
     return error ? (
@@ -136,7 +141,7 @@ export function Charts(props: {
         {error}
       </p>
     ) : (
-      <p className="hint">Loading…</p>
+      <Skeleton variant="chart" />
     );
   }
 
@@ -160,8 +165,10 @@ export function Charts(props: {
         </span>
       </div>
 
-      {!anySpending && <p className="hint">No spending yet. Add an expense in the chat.</p>}
-      {anySpending && categories.length === 0 && <p className="hint">You have no share of this spending. Switch to Group total to see it.</p>}
+      {!anySpending && <EmptyState icon={ChartColumn} title="No spending yet." body="Add an expense in the chat." action={{ label: 'Add an expense', onClick: openChat }} />}
+      {anySpending && categories.length === 0 && (
+        <EmptyState icon={ChartPie} title="You have no share of this spending." body="Switch to Group total to see it." action={{ label: 'Show Group total', onClick: () => setMode('group') }} />
+      )}
       {categories.length > 0 && (
         <>
           <ChartBlock title="Spending by category" headers={['Category', 'Amount']} table={spendTable(categories)}>
@@ -176,7 +183,7 @@ export function Charts(props: {
       {balances.length === 0 ? (
         <section className="chart-block">
           <h2>Balance per person</h2>
-          <p className="hint">Everyone is settled up.</p>
+          <EmptyState icon={CircleCheck} title="Everyone is settled up." />
         </section>
       ) : (
         <ChartBlock

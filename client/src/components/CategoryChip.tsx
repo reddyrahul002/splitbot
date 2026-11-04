@@ -8,7 +8,7 @@ export function CategoryChip({ category, iconOnly = false }: { category: Categor
 
   if (iconOnly) {
     return (
-      <span className="category-chip icon-only" style={colours} role="img" aria-label={category}>
+      <span className="category-chip icon-only" style={colours} role="img" aria-label={category} title={category}>
         <Icon aria-hidden="true" />
       </span>
     );

@@ -90,6 +90,7 @@ export function Chat({ people, groups, onChange }: { people: Person[]; groups?: 
       )}
       <form className="composer" onSubmit={send}>
         <input
+          id="chat-input"
           ref={inputRef}
           value={input}
           maxLength={MAX_TEXT}

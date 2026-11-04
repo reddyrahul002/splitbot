@@ -3,6 +3,7 @@ import { CATEGORIES, formatCents, NEW_PERSON_PREFIX, type Category, type Draft, 
 import { ApiRequestError, confirmDraft, discardDraft, editDraft } from '../api';
 import { confirmIfValid, createEditQueue, inputProblem, parseDollars, replaceEditFor, type TypedInput } from '../draftLogic';
 import { joiningNames } from '../groupLogic';
+import { useToast } from './Toast';
 
 type Status = 'open' | 'saved' | 'discarded' | 'expired';
 
@@ -82,6 +83,7 @@ export function DraftCard(props: {
   const [queue] = useState(createEditQueue);
   // What's in the inputs right now, so Confirm checks that and not what was last saved to the draft.
   const typed = useRef<TypedInput>({});
+  const toast = useToast();
 
   const locked = status !== 'open' || finishing;
   const known = [...people, ...draft.newPeople];
@@ -90,7 +92,9 @@ export function DraftCard(props: {
 
   function fail(err: unknown) {
     if (err instanceof ApiRequestError && err.code === 'DRAFT_NOT_FOUND') setStatus('expired');
-    setError(err instanceof Error ? err.message : String(err));
+    const message = err instanceof Error ? err.message : String(err);
+    setError(message);
+    toast('error', message);
   }
 
   const edit = (edits: DraftEdits) =>
@@ -136,6 +140,7 @@ export function DraftCard(props: {
           setError(null);
           setInputError(null);
           onSaved();
+          toast('success', draft.kind === 'expense' ? 'Expense saved' : 'Payment recorded');
         },
       });
     } catch (err) {

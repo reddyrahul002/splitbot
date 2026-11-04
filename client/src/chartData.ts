@@ -8,7 +8,7 @@ export interface ChartRow {
   cents: number;
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const value = (row: SpendRow, mode: SpendMode) => (mode === 'mine' ? row.myCents : row.totalCents);
 

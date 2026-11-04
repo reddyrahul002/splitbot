@@ -20,6 +20,12 @@ export function loadEnv(path: string = ROOT_ENV_PATH): EnvStatus {
   return { path, found, geminiKeySet: Boolean(process.env.GEMINI_API_KEY) };
 }
 
+/** Today in the server's local time zone, as YYYY-MM-DD. */
+export function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 /** A startup line that says whether config was found, without any values. */
 export function describeEnv(status: EnvStatus): string {
   return status.found

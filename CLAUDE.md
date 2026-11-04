@@ -10,7 +10,7 @@ SplitBot is a Splitwise-style web app. You type expenses in plain English, and a
 1. **The LLM never does arithmetic.** Gemini only extracts structure: payer, participants, amounts, itemized adjustments and category. Deterministic TypeScript in `server/src/domain/` computes every share, balance and transfer.
 2. **All money is integer cents.** Convert at the boundary with `toCents` / `formatCents`. Leftover cents are distributed in a deterministic order, so shares always add up exactly to the total.
 3. **Every write goes through a draft.** Tools create drafts, the UI shows them, and nothing is saved until the user clicks Confirm. Read-only questions are answered directly from tool results.
-4. **The agent is bounded.** At most 5 tool calls per user message. If names, the payer or amounts are unclear, it asks a clarifying question instead of guessing. Guardrails add warnings to drafts: an amount that isn't in the user's message, or a name close to an existing person.
+4. **The agent is bounded.** At most 5 tool calls per user message. If names, the payer or amounts are unclear, it asks a clarifying question instead of guessing. When no payer is mentioned at all, the payer is me. Guardrails add warnings to drafts: an amount that isn't in the user's messages, or a name close to an existing person.
 
 ## Repo layout
 ```
@@ -29,6 +29,7 @@ client/src/               # React app: Chat, DraftCard, Balances, SettleUp, Insi
 - **Each step ends with tests passing and a commit.** Commit message: `Step N: <summary>`.
 - **Tests first for domain logic.** Write the tests, confirm they fail, then implement.
 - **Never edit tests just to make them pass.** If a test looks wrong, stop and explain why instead of changing it.
+- **Never modify source or test files with shell commands (sed, python, heredocs).** Always use the Edit/Write tools so every change shows as a reviewable diff.
 - **Never print or commit the API key.** `GEMINI_API_KEY` lives only in `.env`, which is gitignored. Commit only `.env.example`. Don't echo env vars or log request headers.
 - Log notable decisions, AI mistakes and re-prompts in DECISIONS.md as they happen.
 - Use `/review-step` to review the current step before committing.

@@ -195,3 +195,14 @@ export interface ChatMessage {
   role: 'user' | 'model';
   text: string;
 }
+
+/** POST /api/chat body. The client keeps the history and sends all of it, ending with the user's new message. */
+export interface ChatRequest {
+  messages: ChatMessage[];
+}
+
+/** The agent's reply plus every draft it created for this message, in creation order. Nothing is saved yet. */
+export interface ChatResponse {
+  reply: string;
+  drafts: Draft[];
+}

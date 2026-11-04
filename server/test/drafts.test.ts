@@ -360,3 +360,50 @@ describe('applyEdits', () => {
     expect(applyEdits(d, { totalCents: 9000 }, PEOPLE).warnings).toEqual([]);
   });
 });
+
+describe('error messages use names, not ids (Step 4 review)', () => {
+  const PRIYA: Person = { id: 'p_9xQ2', name: 'Priya' };
+
+  it('Step 4 #60: SplitError messages from the builder name people, including new ones, and keep the code', () => {
+    const notParticipant = codeAndMessage(() =>
+      buildExpenseDraft({ ...DINNER, participants: ['me', 'Mei'], adjustments: [{ person: 'Kai', cents: 500 }] }, PEOPLE, OPTS),
+    );
+    expect(notParticipant).toEqual({ code: 'ADJUSTMENT_NOT_PARTICIPANT', message: '"Kai" has an adjustment but is not a participant.' });
+
+    const missing = codeAndMessage(() =>
+      buildExpenseDraft(
+        { ...DINNER, adjustments: undefined, participants: ['me', 'Priya', 'Kai'], splitType: 'exact', exact: { me: 4500, Kai: 4500 } },
+        [...PEOPLE, PRIYA],
+        OPTS,
+      ),
+    );
+    expect(missing).toEqual({ code: 'MISSING_SPLIT_VALUE', message: '"Priya" has no exact value.' });
+    expect(missing.message).not.toContain('p_9xQ2');
+
+    const zero = codeAndMessage(() =>
+      buildExpenseDraft(
+        { ...DINNER, adjustments: undefined, participants: ['Kai', 'Rahul'], splitType: 'shares', shares: { Kai: 0, Rahul: 1 } },
+        PEOPLE,
+        OPTS,
+      ),
+    );
+    expect(zero.message).toBe('Share count for "Kai" is 0; it must be more than 0.');
+  });
+
+  it('Step 4 #61: applyEdits errors name people too: "Use Priya" when Priya is already in the draft', () => {
+    const people = [...PEOPLE, PRIYA];
+    const d = buildExpenseDraft({ ...DINNER, adjustments: undefined, participants: ['me', 'Priya', 'Pria'] }, people, OPTS);
+    const err = codeAndMessage(() => applyEdits(d, { replace: [{ from: 'new:pria', to: PRIYA.id }] }, people));
+    expect(err).toEqual({ code: 'DUPLICATE_PARTICIPANT', message: '"Priya" is listed more than once.' });
+  });
+});
+
+function codeAndMessage(fn: () => unknown): { code: string; message: string } {
+  try {
+    fn();
+  } catch (err) {
+    const e = err as SplitError;
+    return { code: e.code, message: e.message };
+  }
+  throw new Error('expected an error');
+}

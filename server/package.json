@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "test": "vitest run",
+    "eval": "tsx scripts/eval.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@google/genai": "^2.32.0",
     "@splitbot/shared": "*",
     "cors": "^2.8.6",
     "dotenv": "^18.0.9",

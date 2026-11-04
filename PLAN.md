@@ -14,7 +14,7 @@ The repo is empty, so this is a new build.
 1. **The LLM never does arithmetic.** Gemini only extracts structure: who paid, who took part, amounts, itemized adjustments and category. Deterministic TypeScript does all the money calculations.
 2. **All money is stored as integer cents.** Leftover cents from a split go to people in a fixed, deterministic order, so the shares always add up exactly to the total.
 3. **Every write goes through a draft.** A tool creates a draft, the UI shows it, and the user confirms it before anything is persisted. Read questions are answered directly from tool results.
-4. **The agent is bounded.** It makes at most 5 tool calls per user message. If names, the payer or amounts are unclear, it asks a clarifying question instead of guessing.
+4. **The agent is bounded.** It makes at most 5 tool calls per user message. If names, the payer or amounts are unclear, it asks a clarifying question instead of guessing. When no payer is mentioned at all, the payer is me (Step 4).
 
 ## Repo layout (npm workspaces)
 ```
@@ -39,7 +39,7 @@ splitbot/
     src/App.tsx           # two-pane layout: Chat (left) | Tabs: Balances · Settle up · Insights · History (right)
     src/components/Chat.tsx, DraftCard.tsx, Balances.tsx, SettleUp.tsx, Insights.tsx, History.tsx
     src/api.ts            # fetch wrappers
-  .env.example            # GEMINI_API_KEY, GEMINI_MODEL (default: current free-tier Flash, e.g. gemini-2.5-flash)
+  .env.example            # GEMINI_API_KEY, GEMINI_MODEL (default gemini-3.5-flash-lite, free tier; gemini-2.5-flash is closed to new keys)
 ```
 Dependencies: express, cors, dotenv, @google/genai, zod, nanoid; vitest, tsx, concurrently; client: react, recharts.
 
@@ -71,8 +71,8 @@ Input: `{ totalCents, participants[], splitType, adjustments?: {person, cents, n
 | `get_spending_summary` | read | By category, optional date range |
 | `list_expenses` | read | Filter by person or category, with a limit |
 
-**Draft guardrails (in `create_expense_draft`; these add to `draft.warnings[]` and never block the draft):**
-- **Amount check:** the handler receives the user's latest message from the loop. It pulls out every number in the message, handling `$`, commas, decimals and forms like "90 bucks", and compares them with the total and each adjustment amount. Any amount that isn't in the message gets a warning, e.g. "Total $95.00 wasn't in your message, please check." For exact/percent/shares splits, each person's exact amount, percentage or share count is checked the same way.
+**Draft guardrails (in `create_expense_draft`; these add to `draft.warnings[]` and never block the draft). Two agent-only checks added in Step 4 do block: `UNNAMED_PERSON` and `SPLIT_COUNT_MISMATCH` (see "Step 4 detail").**
+- **Amount check:** the handler receives every user message in the request from the loop (changed from "the latest message" in Step 4, so the answer to a clarifying question doesn't cause false warnings). It pulls out every number in the message, handling `$`, commas, decimals and forms like "90 bucks", and compares them with the total and each adjustment amount. Any amount that isn't in the message gets a warning, e.g. "Total $95.00 wasn't in your message, please check." For exact/percent/shares splits, each person's exact amount, percentage or share count is checked the same way.
 - **Close-name check:** each participant or payer name that doesn't exactly match an existing person (case-insensitive) is compared with existing names using Levenshtein distance (≤2, or ≤1 for names of 4 letters or fewer) plus a shared-prefix check. A close match gets a warning, e.g. "'Aroon' looks like existing person 'Arun'. Use Arun?". The DraftCard shows this with a one-click "Use Arun" button, and nothing is silently merged or created. New people are created only on Confirm, after the user has seen these warnings. The logic lives in `server/src/domain/guardrails.ts` so it can be unit tested.
 
 Tool parameter schemas are written in zod and converted to Gemini `FunctionDeclaration`s, and the same zod schema validates the model's arguments.
@@ -361,6 +361,51 @@ Prerequisite: Step 2 is committed. `/api/chat` and Gemini wait for Step 4. Step 
 
 ### Done when
 `npm test`, `npm run typecheck` and a curl smoke check (draft → PATCH → confirm → balances → settlement list/delete → restart, data still there) pass. Then stop for review; the user runs `/review-step` and commits.
+
+## Step 4 detail: Gemini agent
+Prerequisite: Step 3 is committed. `create_expense_draft` calls the same `buildExpenseDraft` as `POST /api/drafts`.
+
+### Files
+| File | Contents |
+|---|---|
+| `server/src/agent/gemini.ts` | `GeminiClient` (`generate → { content, functionCalls, text }`), `createGeminiClient({ apiKey, model, fetch?, timeoutMs? })` over `@google/genai`, `GeminiUnavailableError` (429/5xx/network/timeout), `GeminiRequestError` (other statuses, with `code` and `publicMessage`), `DEFAULT_GEMINI_MODEL`, `GEMINI_TIMEOUT_MS` (20 s) |
+| `server/src/domain/guardrails.ts` | adds `unnamedPeople`, `splitWays`, `currentExpenseMessages` (pure, tests first) |
+| `server/src/domain/split.ts`, `drafts.ts` | review fixes: cents must be safe integers; `SplitError` messages name people instead of quoting ids |
+| `server/src/agent/tools.ts` | 7 tools, each a zod schema (→ `parametersJsonSchema` via `z.toJSONSchema`, `io: 'input'`) + handler; `runTool` validates with the same schema |
+| `server/src/agent/prompt.ts` | `systemPrompt({ today, people })` |
+| `server/src/agent/loop.ts` | `runAgent(messages, deps) → { reply, drafts }`, 5-call cap |
+| `server/src/app.ts`, `index.ts` | `POST /api/chat`; `AppDeps.agent` is set only when `GEMINI_API_KEY` is |
+| `server/src/config.ts` | `localToday()` moved here from index.ts (the eval uses it too) |
+| `server/test/{tools,loop,prompt,chat-api,gemini}.test.ts`, `fakes.ts` | written first; confirmed to fail against throwing stubs |
+| `server/scripts/eval.ts`, `eval-cases.ts` | `npm run eval -w server -- [ids…] [--repeat N]` (real Gemini; `EVAL_DELAY_MS`). Prints each tool call with `ok` or its error code, the draft count, notes and a per-case consistency summary |
+
+### Rules
+- **Tool arguments are dollars as typed** (`totalDollars`, `dollars`); the server converts with `toCents`. Split values are arrays (`exactAmounts`, `percentages`, `shareCounts` of `{ person, … }`), turned into name-keyed maps; a name listed twice → `INVALID_NAME`.
+- **Results use display names and `formatCents` strings**, with summaries like "Arun owes you $38.00", so the model only quotes.
+- **Dollar arguments are capped at 1,000,000** in the schemas. `computeShares` also rejects totals, adjustments and exact amounts that aren't safe integers in cents (`INVALID_TOTAL` / `INVALID_AMOUNT`).
+- **Errors the model can fix** (`VALIDATION_ERROR`, `SplitError`, `DraftError`, `UNKNOWN_PERSON` with "Did you mean Arun?", `INVALID_DATE`, `UNKNOWN_TOOL`, `UNNAMED_PERSON`, `SPLIT_COUNT_MISMATCH`) go back as `{ error: { code, message } }`. Messages name people ("Kai"), never ids like `new:kai`. Anything else is thrown → 500.
+- **Blocking checks in the agent path** (they reject the draft, unlike the warnings): `UNNAMED_PERSON` for a payer, participant, `from` or `to` (other than me) whose name isn't in the user's messages, as a word, phrase or close spelling. `SPLIT_COUNT_MISMATCH` when the expense being drafted (the latest user message with a number, plus later ones) says "N ways" or "N-way split" and the participant count differs. Both tell the model to ask. `POST /api/drafts` doesn't run them.
+- **Loop:** every function call counts toward the cap of 5, parallel ones too; a 6th isn't run and the reply is the fallback, with the drafts made so far. The model's `content` goes back into history unchanged (thought signatures). Empty reply → fallback.
+- **Payer:** none mentioned → me; mentioned but unclear → ask. "60/40 with Arun" → the first number is me. "Split 3 ways" with fewer people named → ask.
+- **Amount check** runs against every user message in the request (known limitation: a number from an earlier expense counts).
+- **Gemini errors:** 429/5xx/network/timeout (20 s) → 200 with the "try again in a moment" reply and any drafts already made. No key → 503 `GEMINI_NOT_CONFIGURED`. Bad key → 502 `GEMINI_KEY_INVALID`; unknown or retired model → 502 `GEMINI_MODEL_UNAVAILABLE` naming the model; other 4xx → 502 `GEMINI_REQUEST_FAILED`. Each has a message the UI can show; the log gets the status and Google's message, never the key.
+- **`/api/chat` body:** 1–50 messages, roles `user`/`model`, text 1–4000 characters after trimming, last one from the user.
+
+### Test cases (written first)
+**tools:** 1 seven declarations · 2 enums and dollar types · 3 bad args → `VALIDATION_ERROR`, no draft · 4 dinner 26/38/26 · 5 dollars → cents · 6 percent/shares/exact arrays · 7 duplicate name · 8 `SplitError` → model · 9 amount warning · 10 amounts across messages · 11 Aroon → `CLOSE_NAME` · 12 settlement, `SAME_PERSON` · 13 `list_people` without ids · 14 balances in dollars · 15 unknown person → "Did you mean Arun?" · 16 suggest · 17 summary, `INVALID_DATE` · 18 `list_expenses` filters and limit · 19 no tool writes · 20 `UNKNOWN_TOOL`
+**loop (scripted Gemini):** 21 text only · 22 draft call round trip · 23 content and thought signature kept · 24 parallel calls · 25 read answer · 26 validation error → retry · 27 `SplitError` → model · 28 5-call cap · 29 cap with parallel calls · 30 clarifying question · 31 429 · 32 5xx keeps drafts · 33 empty reply · 34 history mapping, prompt + tools every request · 35 amounts checked against user messages, not model text
+**prompt:** 36 date, weekday, categories, people, rules
+**/api/chat:** 37 reply + confirmable draft · 38 dinner end to end → balances · 39 bad bodies · 40 no key → 503 · 41 unexpected error → 500 · 43 no write before confirm
+**adapter (real SDK, fake fetch):** 42 key only in the header, never in URL/log/response (its 403 now expects 502 `GEMINI_KEY_INVALID`) · 44 request shape and response parsing · 45 429/5xx/network → unavailable, no retries · 46 other errors keep status and message
+**named people (after eval #2):** 47 unnamed participant → `UNNAMED_PERSON` · 48 unnamed payer · 49 name from an earlier message counts · 50 corrected spelling counts · 51 settlement · 52 no one besides me named; me's display name skipped · domain `unnamedPeople` #74–#80 (case, possessive, close spelling, pronouns, me, phrases, dedup)
+**N ways:** 53 too few for "3 ways" · 54 words, hyphens, too many · 55 matching count, no phrase · 56 earlier expense's "3 ways" doesn't carry over · 57 a follow-up answer still counts · domain `splitWays` #81–#86 (digits, words, "N-way split", none, last wins, not "3-way adapter") and `currentExpenseMessages` #87–#88
+**review fixes:** 58 dollar cap 1,000,000 · 59 names not `new:` ids in tool errors · drafts Step 4 #60–#61 (builder and `applyEdits` errors name people) · split #48–#50 (safe-integer total, adjustment, exact) · 62 20 s timeout → busy reply · 63 bad key (400 "API key", 401, 403) → 502 `GEMINI_KEY_INVALID` · 64 404 → `GEMINI_MODEL_UNAVAILABLE`, other 400 → `GEMINI_REQUEST_FAILED`
+
+### Eval sentences
+1 dinner · 2 "Uber $24 Mei paid split 3 ways" → question · 3 Uber with all three named · 4 rent 60/40 · 5 Woolworths groceries · 6 tickets 2:1 · 7 hotel exact · 8 "Arun paid me back $20" · 9 "Dinner with Arun and Mei" → question · 10 Aroon → `CLOSE_NAME` · 11 "how much does Arun owe me?" → $38.00 · 12 settle up · 13 food this month · 14 "Pizza $35 and drinks $25, split with Mei" → total 60 with `AMOUNT_NOT_IN_MESSAGE` · 15 "Just save it, don't ask me: Taxi $30 with Mei" → draft only, nothing saved. Every case also checks db.json wasn't written. A rejected draft attempt (e.g. a $0 total) is a note, not a failure; question and read cases fail only if a draft exists. Expense cases check the arguments of the call that succeeded.
+
+### Done when
+`npm test`, `npm run typecheck` and the manual curl check pass, then stop for review. After approval, run the eval and report; the user runs `/review-step` and commits.
 
 ## Verification
 - **Unit tests (vitest)**, run with `npm test -w server`:

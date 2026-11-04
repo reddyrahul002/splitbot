@@ -6,11 +6,14 @@ import {
   SPLIT_TYPES,
   type ApiError,
   type BalancesResponse,
+  type ChatMessage,
+  type ChatResponse,
   type DraftEdits,
   type DraftRequest,
   type Expense,
   type Settlement,
 } from '@splitbot/shared';
+import { GeminiRequestError } from './agent/gemini';
 import { computeBalances, pairwiseDebts } from './domain/balances';
 import { suggestSettlements } from './domain/settle';
 import { SplitError } from './domain/split';
@@ -27,6 +30,8 @@ export interface AppDeps {
   now?: () => number;
   /** Where unexpected errors are logged; defaults to console.error. */
   log?: (message: string) => void;
+  /** Answers POST /api/chat. Undefined when GEMINI_API_KEY isn't set; the route then answers 503. */
+  agent?: (messages: ChatMessage[]) => Promise<ChatResponse>;
 }
 
 const cents = z.int();
@@ -68,6 +73,14 @@ const DraftEditsSchema = z.strictObject({
 
 const SummaryQuerySchema = z.object({ from: z.string().optional(), to: z.string().optional() });
 
+const ChatRequestSchema = z.strictObject({
+  messages: z
+    .array(z.strictObject({ role: z.enum(['user', 'model']), text: z.string().trim().min(1).max(4000) }))
+    .min(1)
+    .max(50)
+    .refine((messages) => messages.at(-1)?.role === 'user', 'The last message must be from the user.'),
+});
+
 /** A request problem that maps to a 4xx response. */
 class HttpError extends Error {
   constructor(
@@ -92,7 +105,7 @@ function newestFirst<T extends { date: string }>(items: T[], tiebreak: (item: T)
 }
 
 export function createApp(deps: AppDeps): express.Express {
-  const { store, drafts, today, now = Date.now, log = (m) => console.error(m) } = deps;
+  const { store, drafts, today, now = Date.now, log = (m) => console.error(m), agent } = deps;
   const app = express();
   app.use(express.json());
 
@@ -100,6 +113,15 @@ export function createApp(deps: AppDeps): express.Express {
 
   app.get('/api/people', (_req, res) => {
     res.json(store.snapshot().people);
+  });
+
+  app.post('/api/chat', async (req, res) => {
+    if (!agent) {
+      throw new HttpError(503, 'GEMINI_NOT_CONFIGURED', 'Chat needs GEMINI_API_KEY in .env (see .env.example). You can still add expenses with the form.');
+    }
+    const { messages } = ChatRequestSchema.parse(req.body);
+    const body: ChatResponse = await agent(messages);
+    res.json(body);
   });
 
   app.post('/api/drafts', (req, res) => {
@@ -206,6 +228,11 @@ export function createApp(deps: AppDeps): express.Express {
       res.status(status).json(body);
     };
     if (err instanceof HttpError) return fail(err.status, err.code, err.message);
+    if (err instanceof GeminiRequestError) {
+      // The detail (status and Google's message) is for the log; the response says what to fix.
+      log(err.message);
+      return fail(502, err.code, err.publicMessage);
+    }
     if (err instanceof SplitError || err instanceof DraftError) return fail(400, err.code, err.message);
     if (err instanceof z.ZodError) return fail(400, 'VALIDATION_ERROR', z.prettifyError(err));
     if (err?.type === 'entity.parse.failed') return fail(400, 'VALIDATION_ERROR', 'The request body is not valid JSON.');

@@ -409,6 +409,21 @@ describe('invariants', () => {
     }
   });
 
+  // #48–#50 added in the Step 4 review: chat made huge totals reachable.
+  it('#48 a total above Number.MAX_SAFE_INTEGER → INVALID_TOTAL (shares could no longer add up exactly)', () => {
+    expectSplitError({ totalCents: 2 ** 53 }, 'INVALID_TOTAL');
+    expectSplitError({ totalCents: 1e17 }, 'INVALID_TOTAL');
+    expect(cents(computeShares(input({ totalCents: Number.MAX_SAFE_INTEGER })))).toHaveLength(3);
+  });
+
+  it('#49 an adjustment above Number.MAX_SAFE_INTEGER → INVALID_AMOUNT', () => {
+    expectSplitError({ totalCents: Number.MAX_SAFE_INTEGER, adjustments: [{ person: ARUN, cents: 2 ** 53 }] }, 'INVALID_AMOUNT');
+  });
+
+  it('#50 an exact amount above Number.MAX_SAFE_INTEGER → INVALID_AMOUNT', () => {
+    expectSplitError({ splitType: 'exact', participants: [ME, ARUN], exact: { [ME]: 2 ** 53, [ARUN]: 0 } }, 'INVALID_AMOUNT');
+  });
+
   it('#47 500 random percent/shares splits with off-100 percentages, 3-decimal shares and large totals still add up', () => {
     const rand = rng(7);
     const int = (min: number, max: number) => min + Math.floor(rand() * (max - min + 1));

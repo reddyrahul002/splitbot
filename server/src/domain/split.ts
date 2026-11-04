@@ -47,6 +47,10 @@ export function computeShares(input: SplitInput): Share[] {
   if (!Number.isInteger(totalCents) || totalCents <= 0) {
     throw new SplitError('INVALID_TOTAL', `The total must be more than $0.00, in whole cents (got ${describeCents(totalCents)}).`);
   }
+  // Above this, integer math in cents is no longer exact and shares could silently stop adding up.
+  if (!Number.isSafeInteger(totalCents)) {
+    throw new SplitError('INVALID_TOTAL', `The total ${describeCents(totalCents)} is too large.`);
+  }
   if (!SPLIT_TYPES.includes(splitType)) {
     throw new SplitError('INVALID_SPLIT_TYPE', `Unknown split type "${splitType}". Use one of: ${SPLIT_TYPES.join(', ')}.`);
   }
@@ -78,7 +82,7 @@ export function computeShares(input: SplitInput): Share[] {
   const extra = new Map<PersonId, number>();
   let adjustmentsTotal = 0;
   for (const adj of adjustments) {
-    if (!Number.isInteger(adj.cents) || adj.cents < 0) {
+    if (!Number.isSafeInteger(adj.cents) || adj.cents < 0) {
       throw new SplitError(
         'INVALID_AMOUNT',
         `Adjustment for "${adj.person}" is ${describeCents(adj.cents)}; it must be $0.00 or more, in whole cents.`,
@@ -113,7 +117,7 @@ export function computeShares(input: SplitInput): Share[] {
     case 'exact': {
       const values = splitValues(input.exact, participants, 'exact');
       for (const [i, v] of values.entries()) {
-        if (!Number.isInteger(v) || v < 0) {
+        if (!Number.isSafeInteger(v) || v < 0) {
           throw new SplitError(
             'INVALID_AMOUNT',
             `Exact amount for "${participants[i]}" is ${describeCents(v)}; it must be $0.00 or more, in whole cents.`,

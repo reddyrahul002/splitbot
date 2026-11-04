@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { Person } from '@splitbot/shared';
-import { checkAmounts, checkNames, extractNumbers, findCloseName, levenshtein } from '../src/domain/guardrails';
+import {
+  checkAmounts,
+  checkNames,
+  currentExpenseMessages,
+  extractNumbers,
+  findCloseName,
+  levenshtein,
+  splitWays,
+  unnamedPeople,
+} from '../src/domain/guardrails';
 
 const ME: Person = { id: 'me', name: 'Me' };
 const ARUN: Person = { id: 'arun', name: 'Arun' };
@@ -231,5 +240,90 @@ describe('close-name check', () => {
 
   it('a brand-new name with nothing close gives no warning', () => {
     expect(checkNames({ paidBy: 'me', participants: ['me', 'Priya'] }, PEOPLE)).toEqual([]);
+  });
+});
+
+describe('unnamedPeople (Step 4)', () => {
+  it('#74 names in the text count, whatever the case, punctuation or possessive', () => {
+    expect(unnamedPeople(['Arun', 'Mei'], DINNER_MSG)).toEqual([]);
+    expect(unnamedPeople(['Arun', 'Mei'], "dinner with arun, it was mei's treat!")).toEqual([]);
+  });
+
+  it('#75 a name the user never wrote is returned', () => {
+    expect(unnamedPeople(['Mei', 'Arun'], 'Uber $24 Mei paid split 3 ways')).toEqual(['Arun']);
+  });
+
+  it('#76 a close spelling of a word in the text counts as named', () => {
+    expect(unnamedPeople(['Arun'], 'Lunch $40 split with Aroon')).toEqual([]);
+    expect(unnamedPeople(['José'], 'taxi with jose')).toEqual([]);
+  });
+
+  it('#77 pronouns are not names: "me" in the text does not name Mei', () => {
+    expect(unnamedPeople(['Mei'], 'Taxi $30, split it with me')).toEqual(['Mei']);
+    expect(unnamedPeople(['Kai'], 'just me and him')).toEqual(['Kai']);
+  });
+
+  it("#78 the user is never checked: 'me', and me's display name", () => {
+    expect(unnamedPeople(['me', ' ME '], 'Dinner $50')).toEqual([]);
+    expect(unnamedPeople(['Rahul'], 'Dinner $50', 'Rahul')).toEqual([]);
+    expect(unnamedPeople(['Rahul'], 'Dinner $50')).toEqual(['Rahul']);
+  });
+
+  it('#79 multi-word names match as a phrase', () => {
+    expect(unnamedPeople(['Mary Ann'], 'Dinner with Mary Ann and Kai')).toEqual([]);
+    expect(unnamedPeople(['Mary Ann'], 'Dinner with Kai')).toEqual(['Mary Ann']);
+  });
+
+  it('#80 each missing name once, as first written; empty names ignored', () => {
+    expect(unnamedPeople(['Arun', ' arun ', '', 'Mei'], 'Dinner $50')).toEqual(['Arun', 'Mei']);
+  });
+});
+
+describe('splitWays (Step 4)', () => {
+  it('#81 digits: "split 3 ways", "4 way split"', () => {
+    expect(splitWays('Uber $24 Mei paid split 3 ways')).toBe(3);
+    expect(splitWays('pizza $40, 4 way split')).toBe(4);
+  });
+
+  it('#82 number words, any case: "three ways", "Two Ways"', () => {
+    expect(splitWays('split it three ways')).toBe(3);
+    expect(splitWays('Two Ways please')).toBe(2);
+    expect(splitWays('ten ways')).toBe(10);
+  });
+
+  it('#83 hyphenated: "3-way", "three-way split"', () => {
+    expect(splitWays('a 3-way split')).toBe(3);
+    expect(splitWays('three-way split of $90')).toBe(3);
+  });
+
+  it('#84 no "N ways" phrase → null; "always", "anyway" and a bare number don\'t count', () => {
+    expect(splitWays('Dinner $90 split with Arun and Mei')).toBeNull();
+    expect(splitWays('I always pay, anyway: $30 with Mei')).toBeNull();
+    expect(splitWays('3 people, $30 bus ways')).toBeNull();
+    expect(splitWays('')).toBeNull();
+  });
+
+  it('#85 several mentions: the last one wins (the user corrected it)', () => {
+    expect(splitWays('split 3 ways\nactually 4 ways')).toBe(4);
+  });
+
+  it('#86 only "N ways" or "N-way split": a "3-way adapter" or "two-way radio" is not a split', () => {
+    expect(splitWays('3-way adapter $15 with Mei')).toBeNull();
+    expect(splitWays('two-way radio $40, split with Arun')).toBeNull();
+    expect(splitWays('3 way adapter, split it 2 ways')).toBe(2);
+    expect(splitWays('split 3-ways')).toBe(3);
+  });
+});
+
+describe('currentExpenseMessages (Step 4 review)', () => {
+  it('#87 the latest user message with a number, plus any after it', () => {
+    expect(currentExpenseMessages(['Uber $24 Mei paid split 3 ways', 'Arun'])).toEqual(['Uber $24 Mei paid split 3 ways', 'Arun']);
+    expect(currentExpenseMessages(['Uber $24 Mei paid split 3 ways', 'Arun', 'Lunch $20 with Mei'])).toEqual(['Lunch $20 with Mei']);
+    expect(currentExpenseMessages(['Dinner with Arun', 'it was $40', 'I paid'])).toEqual(['it was $40', 'I paid']);
+  });
+
+  it('#88 no number in any message → all of them; no messages → none', () => {
+    expect(currentExpenseMessages(['Dinner with Arun', 'I paid'])).toEqual(['Dinner with Arun', 'I paid']);
+    expect(currentExpenseMessages([])).toEqual([]);
   });
 });

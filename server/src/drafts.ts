@@ -18,7 +18,7 @@ import {
 } from '@splitbot/shared';
 import { checkAmounts, checkNames, normalizeName } from './domain/guardrails';
 import { describeCents } from './domain/money';
-import { computeShares } from './domain/split';
+import { computeShares, SplitError } from './domain/split';
 import { assertDate } from './domain/summary';
 
 export type DraftErrorCode = 'SAME_PERSON' | 'UNKNOWN_PERSON' | 'INVALID_AMOUNT' | 'INVALID_DATE' | 'INVALID_NAME' | 'INVALID_EDIT';
@@ -155,15 +155,26 @@ function compactMeta(meta: SplitMeta): SplitMeta {
   return Object.fromEntries(Object.entries(meta).filter(([, v]) => v !== undefined)) as SplitMeta;
 }
 
-/** Recomputes shares from the expense's participants (in order), payer, total and splitMeta. */
-function withShares(expense: Expense): Expense {
-  const shares = computeShares({
-    totalCents: expense.totalCents,
-    paidBy: expense.paidBy,
-    participants: expense.shares.map((s) => s.personId),
-    ...expense.splitMeta,
-  });
-  return { ...expense, shares };
+/**
+ * Recomputes shares from the expense's participants (in order), payer, total and splitMeta. SplitError messages quote
+ * person ids ("new:kai", nanoids); they are rewritten to display names from `people`, because the user and the model
+ * read them.
+ */
+function withShares(expense: Expense, people: Person[]): Expense {
+  try {
+    const shares = computeShares({
+      totalCents: expense.totalCents,
+      paidBy: expense.paidBy,
+      participants: expense.shares.map((s) => s.personId),
+      ...expense.splitMeta,
+    });
+    return { ...expense, shares };
+  } catch (err) {
+    if (!(err instanceof SplitError)) throw err;
+    const nameOf = new Map(people.map((p) => [p.id, p.name]));
+    const message = err.message.replace(/"([^"]+)"/g, (quoted, id: string) => (nameOf.has(id) ? `"${nameOf.get(id)}"` : quoted));
+    throw new SplitError(err.code, message);
+  }
 }
 
 export function buildExpenseDraft(input: ExpenseDraftInput, people: Person[], options: BuildOptions): Draft {
@@ -187,7 +198,7 @@ export function buildExpenseDraft(input: ExpenseDraftInput, people: Person[], op
     shares: participants.map((personId) => ({ personId, cents: 0 })),
     splitMeta,
     createdAt: new Date().toISOString(),
-  });
+  }, [...people, ...newPeople]);
 
   const warnings: DraftWarning[] = [
     ...(options.message === undefined ? [] : checkAmounts(options.message, { totalCents: expense.totalCents, ...splitMeta }, [...people, ...newPeople])),
@@ -285,7 +296,7 @@ export function applyEdits(draft: Draft, edits: DraftEdits, people: Person[]): D
       date: date ?? remapped.date,
       totalCents: edits.totalCents ?? remapped.totalCents,
       paidBy: edits.paidBy ?? remapped.paidBy,
-    });
+    }, [...people, ...draft.newPeople]);
     next = { ...draft, expense, newPeople };
   } else {
     const settlement = {

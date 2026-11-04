@@ -110,6 +110,67 @@ export function checkNames(names: { paidBy: string; participants: string[] }, pe
   return warnings;
 }
 
+/**
+ * Pronouns and common words in expense messages. They never count as naming someone, so "split with me" doesn't
+ * name Mei and "pizza and drinks" doesn't name Ana (both are one edit away).
+ */
+const NOT_NAMES = new Set(
+  ('i me my mine myself you your we us our ours he him his she her hers they them their it its ' +
+    'a an and or the of at on in to for from with by just all both everyone back paid pay pays owe owes had has was ' +
+    'is split ways way each per half').split(' '),
+);
+
+/**
+ * The names (other than the user) that don't appear in `text`, the user's own messages. A name counts as written if
+ * it is a word or phrase in the text, or a close spelling of one (same rule as findCloseName: "Arun" for "Aroon").
+ * Each missing name is returned once, trimmed, in the order given.
+ */
+export function unnamedPeople(names: string[], text: string, meName?: string): string[] {
+  const words = (normalizeName(text).match(/[\p{L}\p{M}]+(?:['’][\p{L}\p{M}]+)*/gu) ?? [])
+    .map((w) => w.replace(/['’]s$/u, ''))
+    .filter((w) => !NOT_NAMES.has(w));
+  const phrase = ` ${words.join(' ')} `;
+  const asPeople = words.map((w, i) => ({ id: `word${i}`, name: w }));
+  const self = new Set([ME_ID, ...(meName === undefined ? [] : [normalizeName(meName)])]);
+
+  const seen = new Set<string>();
+  const missing: string[] = [];
+  for (const raw of names) {
+    const n = normalizeName(raw).replace(/\s+/gu, ' ');
+    if (n === '' || self.has(n) || seen.has(n)) continue;
+    seen.add(n);
+    const written = phrase.includes(` ${n} `) || findCloseName(n, asPeople) !== null;
+    if (!written) missing.push(raw.trim());
+  }
+  return missing;
+}
+
+/**
+ * The user messages about the expense being drafted: the latest one with a number in it (the amount, usually), plus
+ * any after it, e.g. the "Arun" that answers "who's the third person?". All messages if none has a number.
+ */
+export function currentExpenseMessages(messages: string[]): string[] {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (extractNumbers(messages[i]!).length > 0) return messages.slice(i);
+  }
+  return [...messages];
+}
+
+const NUMBER_WORDS: Record<string, number> = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+
+/**
+ * How many ways the user said to split: "3 ways", "three ways", "3-ways", or "N-way split" / "4 way split". A bare
+ * "3-way" is not enough ("3-way adapter"). The last mention wins, since a later message usually corrects an earlier
+ * one. Null when there's no such phrase.
+ */
+export function splitWays(text: string): number | null {
+  const n = `(\\d+|${Object.keys(NUMBER_WORDS).join('|')})`;
+  const pattern = new RegExp(`\\b${n}(?:\\s+|-)(?:ways|way\\s+split)\\b`, 'giu');
+  const last = [...text.matchAll(pattern)].at(-1)?.[1]?.toLowerCase();
+  if (last === undefined) return null;
+  return NUMBER_WORDS[last] ?? Number(last);
+}
+
 /** How names are compared everywhere: NFC, trimmed, lowercase. */
 export function normalizeName(name: string): string {
   return name.normalize('NFC').trim().toLowerCase();

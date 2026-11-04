@@ -4,16 +4,16 @@ import { formatCents, type Account, type Person, type SpendingSummary } from '@s
 import { axisLabel, balanceDomain, balanceRows, categoryRows, monthRows, shortName, spendTotal, type ChartRow, type SpendMode } from '../chartData';
 import { debtText, signedCents } from '../display';
 
-// Passed scripts/validate_palette.js from the dataviz skill on white: the pair has CVD ΔE 8.4.
-const OWES_ME = '#047857';
-const I_OWE = '#b91c1c';
+// Tokens, so a theme switch needs no re-render. The pair passed scripts/validate_palette.js from the dataviz skill in both themes.
+const OWES_ME = 'var(--chart-owes)';
+const I_OWE = 'var(--chart-owe)';
 // One neutral hue for spending, so it never reads as money owed.
-const SPEND = '#2a78d6';
-const AXIS_INK = '#57534e';
-const LABEL_INK = '#1c1917';
-const GRID = '#e7e5e4';
-const BASELINE = '#a8a29e';
-const HOVER = '#f5f5f4';
+const SPEND = 'var(--chart-spend)';
+const AXIS_INK = 'var(--text-muted)';
+const LABEL_INK = 'var(--text)';
+const GRID = 'var(--chart-grid)';
+const BASELINE = 'var(--chart-baseline)';
+const HOVER = 'var(--chart-hover)';
 
 const BAR_SIZE = 24;
 const ROW_HEIGHT = 40;

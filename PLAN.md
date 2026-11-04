@@ -54,7 +54,7 @@ splitbot/
     test/*.test.ts(x)     # vitest: pure logic, fetch wrappers, markdown rendering
   .env.example            # GEMINI_API_KEY, GEMINI_MODEL (default gemini-3.5-flash-lite, free tier; gemini-2.5-flash is closed to new keys)
 ```
-Dependencies: express, cors, dotenv, @google/genai, zod, nanoid; vitest, tsx, concurrently; client: react, recharts.
+Dependencies: express, cors, dotenv, @google/genai, zod, nanoid; vitest, tsx, concurrently; client: react, recharts, lucide-react (Step 10).
 
 ## Data model (shared/types.ts)
 - `Person { id, name }`. A built-in person with id `me` represents the user. The agent resolves "I" and "me" to it. New names are created only when an expense is confirmed, and the draft card shows them as "new".
@@ -124,7 +124,7 @@ Chat history lives in client state and is sent with each request; the server is 
 - **Charts (tab, Recharts)**: horizontal bar chart of spending by category, bar chart by month, and a toggle between "my share" and "group total" on those two; a balance-per-person bar chart. I'll load the `dataviz` skill before writing the chart code.
 - **Groups (tab)**: create a group, add existing people as members, and see each group's balances and its own Smart settle up. Anyone on a confirmed record in the group joins it, and the draft card says so first.
 
-After any confirm or delete, every panel refetches. Styling is plain CSS, with no UI library, to save time.
+After any confirm or delete, every panel refetches. Styling is plain CSS, with no UI library, to save time. Step 10 keeps that, using CSS variables for the design tokens and `lucide-react` for icons.
 
 ## Steps
 Each step ends with `npm test` passing and a commit. After each step I stop for your review before starting the next one.
@@ -148,6 +148,7 @@ Each step ends with `npm test` passing and a commit. After each step I stop for 
 - **Step 7: Polish** (Day 2 morning). README with setup steps, and DECISIONS.md brought up to date. Cut for time: the manual expense form fallback (via `POST /api/drafts` + confirm) and the README screenshots.
 - **Step 8 (stretch): Deploy.** Frontend on Vercel. API on Render as a single instance, with `STORE=mongo` and data in Atlas, because Render's free tier has an ephemeral disk that would reset the JSON file. Vercel rewrites `/api/*` to the Render service, so the browser still calls its own origin, with no CORS change. The single instance matters because drafts are in memory (#M15); drafts open during a restart are lost.
 - **Step 9: MongoDB Atlas store.** Built before the Step 8 deploy; the number keeps Step 8 stable. See "Step 9 detail" below.
+- **Step 10: "Fresh Ledger" UI redesign.** Visual and interaction changes only, in parts A–D. See "Step 10 detail" below.
 
 ## Step 1 detail: shared types + split engine
 Prerequisite: Step 0 is committed. Step 1 also adds the `workspaces` field to the root `package.json` and replaces the placeholder `npm test` with the real vitest run. (npm fails if a listed workspace folder doesn't exist, so Step 0 can't declare them yet.)
@@ -515,6 +516,28 @@ Dinner $90: I paid, split with Arun and Mei, Arun had $12 of drinks. Lunch $30: 
 
 ### Done when
 `npm test` and `npm run typecheck` pass, existing test files have additions only, and two real server processes on one local `mongod` agree. The real Atlas check is the user's, with their own URI (done: connect, confirm, restart).
+
+## Step 10 detail: "Fresh Ledger" UI redesign
+Prerequisite: Step 9 is committed. Each part ends with `npm test`, `npm run typecheck` and a headless Chrome check, then stops for the user's browser check. The user commits each part (`Step 10 Part X: <summary>`).
+
+### Rules
+- **Visual and interaction changes only.** No changes to API calls, data shapes, money logic, the agent or the draft/confirm flow. `server/`, `shared/`, `client/src/api.ts`, `useAppData.ts` and `draftLogic.ts` stay unchanged against `main`.
+- **Existing test files stay byte-identical.** Every new component gets a render test (`renderToStaticMarkup`, no jsdom).
+- **Money** stays formatted by `formatCents`, with no maths in components. Tabular numbers are set on the body, so no amount can miss them.
+- **Colours live only in `client/src/styles/tokens.css`.** `client/test/tokens.test.ts` checks the contrast of every pairing in both themes and pins the validated category palette.
+- **Meaning never relies on colour alone:** every state has an icon or words.
+- **Chat is mounted once.** CSS and state move it between panel, drawer and mobile view, so a resize never loses messages or open drafts.
+- **Avatars are decorative.** Initials come from `data-initials` through CSS, so they stay out of the text of the sentence beside them.
+- **Person rows:** #54 and #55 pin the exact `<li class="person …">`, so the avatar sits in an outer `<li class="person-row">` around `<ul role="none"><li class="person …">…</li></ul>`.
+- **Theme:** a saved choice, otherwise `prefers-color-scheme`, following the system until the user toggles. A script in `index.html` sets `data-theme` before first paint.
+- **Dependencies:** `lucide-react` only. No `motion`.
+- **Checks use a scratch setup:** `STORE=json`, a scratch `DB_PATH`, an empty `GEMINI_API_KEY` and spare ports. Servers are stopped afterwards.
+
+### Parts
+- **A: Tokens, theme toggle, app shell, avatars, category icons.**
+- **B: Summary card, person rows, expense and settlement cards, empty states, skeletons, toasts.**
+- **C: Draft card and chat redesign, motion.**
+- **D: Group cards, charts restyle, tablet and mobile layouts (desktop ≥1280, tablet 768–1279, mobile <768), dark theme polish.**
 
 ## Verification
 - **Unit tests (vitest)**, run with `npm test -w server`:

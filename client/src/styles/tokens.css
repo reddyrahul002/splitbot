@@ -1,0 +1,206 @@
+/*
+ * "Fresh Ledger" design tokens. This is the only file with raw colours.
+ * client/test/tokens.test.ts checks the contrast of every pairing used, in both themes.
+ * index.html always sets data-theme before first paint, so dark needs only the one block below.
+ */
+:root {
+  color-scheme: light;
+
+  /* Surfaces and text */
+  --bg: #f7f6f3;
+  --surface: #ffffff;
+  --surface-sunken: #f1efea;
+  --border: #e5e2dc;
+  --border-strong: #8c857f;
+  --text: #1c1917;
+  --text-muted: #57534e;
+
+  /* Actions: emerald confirms, indigo acts */
+  --primary: #047857;
+  --primary-hover: #065f46;
+  --on-primary: #ffffff;
+  --action: #4338ca;
+  --action-hover: #3730a3;
+  --on-action: #ffffff;
+  --danger: #b91c1c;
+  --on-danger: #ffffff;
+  --focus: #4338ca;
+
+  /* Meaning: always paired with an icon or words */
+  --owes-me: #047857;
+  --owes-me-tint: #ecfdf5;
+  --i-owe: #c2410c;
+  --i-owe-tint: #fff7ed;
+  --settled: #57534e;
+  --warning: #92400e;
+  --warning-tint: #fffbeb;
+  --warning-border: #fcd34d;
+  --error: #b91c1c;
+  --error-tint: #fef2f2;
+  --error-border: #fca5a5;
+  --new-ink: #075985;
+  --new-tint: #e0f2fe;
+  --saved-ink: #065f46;
+  --saved-tint: #d1fae5;
+  --saved-border: #6ee7b7;
+
+  /* Avatars: the same in both themes, so a person keeps their colour. White initials pass AA on all of them. */
+  --on-avatar: #ffffff;
+  --avatar-1: #0f766e;
+  --avatar-2: #4338ca;
+  --avatar-3: #9d174d;
+  --avatar-4: #b45309;
+  --avatar-5: #1d4ed8;
+  --avatar-6: #6d28d9;
+  --avatar-7: #be123c;
+  --avatar-8: #475569;
+  --avatar-more: #57534e;
+  --you-ink: #047857;
+  --you-bg: #ecfdf5;
+
+  /* Categories: chart mark, chip ink, chip tint. The marks passed the dataviz validator in this order. */
+  --cat-food: #eda100;
+  --cat-food-ink: #8a5e00;
+  --cat-food-tint: #fdf3dc;
+  --cat-groceries: #e87ba4;
+  --cat-groceries-ink: #b02a63;
+  --cat-groceries-tint: #fcecf2;
+  --cat-transport: #008300;
+  --cat-transport-ink: #006b00;
+  --cat-transport-tint: #e6f4e6;
+  --cat-housing: #6250d6;
+  --cat-housing-ink: #4a3aa7;
+  --cat-housing-tint: #eeecfb;
+  --cat-entertainment: #e34948;
+  --cat-entertainment-ink: #b92c2c;
+  --cat-entertainment-tint: #fce9e9;
+  --cat-travel: #2a78d6;
+  --cat-travel-ink: #1c5cab;
+  --cat-travel-tint: #e7f0fb;
+  --cat-shopping: #eb6834;
+  --cat-shopping-ink: #b3470f;
+  --cat-shopping-tint: #fdeee6;
+  --cat-other: #1baf7a;
+  --cat-other-ink: #0b7a55;
+  --cat-other-tint: #e3f6ef;
+
+  /* Charts */
+  --chart-owes: #047857;
+  --chart-owe: #c2410c;
+  --chart-spend: #4338ca;
+  --chart-grid: #e5e2dc;
+  --chart-baseline: #a8a29e;
+  --chart-hover: #f1efea;
+
+  /* Spacing: 4px base */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-full: 999px;
+
+  --shadow-sm: 0 1px 2px rgb(28 25 23 / 6%);
+  --shadow-md: 0 2px 8px rgb(28 25 23 / 8%);
+  --shadow-lg: 0 8px 24px rgb(28 25 23 / 12%);
+
+  --font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --text-12: 12px;
+  --text-13: 13px;
+  --text-14: 14px;
+  --text-16: 16px;
+  --text-18: 18px;
+  --text-20: 20px;
+  --text-24: 24px;
+  --text-32: 32px;
+
+  --target: 44px;
+  --motion-fast: 150ms;
+  --motion-slow: 250ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #1c1a18;
+  --surface: #26231f;
+  --surface-sunken: #2f2b26;
+  --border: #3a362f;
+  --border-strong: #807a70;
+  --text: #f5f4f1;
+  --text-muted: #b8b4ac;
+
+  --primary: #34d399;
+  --primary-hover: #6ee7b7;
+  --on-primary: #06281d;
+  --action: #4f46e5;
+  --action-hover: #4338ca;
+  --on-action: #ffffff;
+  --danger: #dc2626;
+  --on-danger: #ffffff;
+  --focus: #a5b4fc;
+
+  --owes-me: #34d399;
+  --owes-me-tint: #12302a;
+  --i-owe: #fb923c;
+  --i-owe-tint: #33231a;
+  --settled: #b8b4ac;
+  --warning: #fbbf24;
+  --warning-tint: #2e2510;
+  --warning-border: #7a5c12;
+  --error: #f87171;
+  --error-tint: #3a1f1f;
+  --error-border: #7f2d2d;
+  --new-ink: #7dd3fc;
+  --new-tint: #12303f;
+  --saved-ink: #6ee7b7;
+  --saved-tint: #12302a;
+  --saved-border: #1f7a5c;
+
+  --avatar-more: #57534e;
+  --you-ink: #34d399;
+  --you-bg: #12302a;
+
+  --cat-food: #c98500;
+  --cat-food-ink: #e8bf5c;
+  --cat-food-tint: #33290f;
+  --cat-groceries: #d55181;
+  --cat-groceries-ink: #f09cbf;
+  --cat-groceries-tint: #3a1f2b;
+  --cat-transport: #008300;
+  --cat-transport-ink: #7fcf7f;
+  --cat-transport-tint: #1b2f1b;
+  --cat-housing: #9085e9;
+  --cat-housing-ink: #b5acf2;
+  --cat-housing-tint: #27233f;
+  --cat-entertainment: #e66767;
+  --cat-entertainment-ink: #f29a9a;
+  --cat-entertainment-tint: #3a1f1f;
+  --cat-travel: #3987e5;
+  --cat-travel-ink: #8fbcf2;
+  --cat-travel-tint: #1b2a3d;
+  --cat-shopping: #d95926;
+  --cat-shopping-ink: #f5a27c;
+  --cat-shopping-tint: #3a2318;
+  --cat-other: #199e70;
+  --cat-other-ink: #6fd6b0;
+  --cat-other-tint: #14302a;
+
+  --chart-owes: #10a674;
+  --chart-owe: #e0702f;
+  --chart-spend: #818cf8;
+  --chart-grid: #3a362f;
+  --chart-baseline: #6b665e;
+  --chart-hover: #2f2b26;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%);
+  --shadow-md: 0 2px 8px rgb(0 0 0 / 35%);
+  --shadow-lg: 0 8px 24px rgb(0 0 0 / 45%);
+}

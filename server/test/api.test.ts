@@ -206,6 +206,29 @@ describe('balances, settle-up and summary', () => {
     ]);
   });
 
+  it('#116 GET /api/account: zeros at first, then the dinner, and it writes nothing', async () => {
+    const { app } = await setup();
+    const empty = await request(app).get('/api/account');
+    expect(empty.status).toBe(200);
+    expect(empty.body).toMatchObject({ owedCents: 0, owedCount: 0, oweCents: 0, oweCount: 0, netCents: 0 });
+
+    await confirm(app, (await createDraft(app)).id);
+    const before = await readFile(dbPath, 'utf8');
+    const res = await request(app).get('/api/account');
+    expect(res.body).toEqual({
+      owedCents: 6400,
+      owedCount: 2,
+      oweCents: 0,
+      oweCount: 0,
+      netCents: 6400,
+      people: [
+        { personId: 'arun', netCents: 3800 },
+        { personId: 'mei', netCents: 2600 },
+      ],
+    });
+    expect(await readFile(dbPath, 'utf8')).toBe(before);
+  });
+
   it('#43 dinner → balances and pairwise debts', async () => {
     const { app } = await setup();
     await confirm(app, (await createDraft(app)).id);

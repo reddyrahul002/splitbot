@@ -13,7 +13,7 @@ import {
   type Person,
   type PersonId,
 } from '@splitbot/shared';
-import { computeBalances, pairwiseDebts } from '../domain/balances';
+import { computeBalances, directDebts } from '../domain/balances';
 import { currentExpenseMessages, findCloseName, hasDatePhrase, normalizeName, respelledNames, splitWays, unnamedPeople } from '../domain/guardrails';
 import { formatCents, toCents } from '../domain/money';
 import { suggestSettlements } from '../domain/settle';
@@ -182,7 +182,7 @@ const TOOLS = {
       const balances = computeBalances(people, expenses, settlements)
         .filter((b) => only === undefined || b.personId === only)
         .map((b) => ({ name: label(b.personId), net: formatCents(b.netCents), summary: netSummary(b.personId, b.netCents, label) }));
-      const debts = pairwiseDebts(people, expenses, settlements)
+      const debts = directDebts(people, expenses, settlements)
         .filter((d) => only === undefined || d.from === only || d.to === only)
         .map((d) => ({ from: label(d.from), to: label(d.to), amount: formatCents(d.cents), summary: debtSummary(d.from, d.to, d.cents, label) }));
       return { result: { balances, debts } };

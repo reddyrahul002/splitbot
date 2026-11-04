@@ -19,10 +19,10 @@ shared/src/money.ts       # toCents, formatCents (server/src/domain/money.ts re-
 server/src/index.ts       # Express app + routes
 server/src/store.ts       # JSON file store (data/db.json), atomic writes
 server/src/drafts.ts      # in-memory drafts with TTL
-server/src/domain/        # split, balances, settle, summary, guardrails (pure functions)
+server/src/domain/        # split, balances, settle, summary, account, guardrails (pure functions)
 server/src/agent/         # Gemini tools, loop, system prompt
 server/test/              # vitest
-client/src/               # React app: Chat, DraftCard, Balances, SettleUp, Insights, History
+client/src/               # React app: AccountSummary, Tabs (SettleUp, Expenses, Charts), Chat, DraftCard
 client/test/              # vitest (pure logic and fetch wrappers)
 ```
 

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CATEGORIES, SPLIT_TYPES, type Draft } from '@splitbot/shared';
 import { functionDeclarations, runTool, TOOL_NAMES } from '../src/agent/tools';
 import { agentFixture, DINNER_ARGS, DINNER_EXPENSE, DINNER_TEXT } from './fakes';
-import { expense, tempDir } from './helpers';
+import { expense, settlement, tempDir } from './helpers';
 
 let dir: string;
 let cleanup: () => Promise<void>;
@@ -495,6 +495,21 @@ describe('read tools', () => {
     const arun = runTool('get_balances', { person: 'arun' }, ctx());
     expect(arun.result.debts.map((d: Json) => d.summary)).toEqual(['Arun owes you $38.00']);
     expect(arun.result.balances.map((b: Json) => b.name)).toEqual(['Arun']);
+  });
+
+  // #117
+  it('get_balances cancels circular debts, so the chat matches the account summary', async () => {
+    const { ctx, store } = await agentFixture(dir, [DINNER_EXPENSE, expense('mei', { mei: 1500, arun: 1500 })]);
+
+    await store.update((db) => {
+      db.settlements.push(settlement('arun', 'me', 5300));
+    });
+    expect(runTool('get_balances', {}, ctx()).result.debts.map((d: Json) => d.summary)).toEqual(['Mei owes you $11.00']);
+
+    await store.update((db) => {
+      db.settlements.push(settlement('mei', 'me', 1100));
+    });
+    expect(runTool('get_balances', {}, ctx()).result.debts).toEqual([]);
   });
 
   // 15

@@ -67,6 +67,11 @@
   - Capitalizing: `o'brien` becomes `O'brien`, and `van der berg` becomes `Van Der Berg`.
   - After one card creates Kai, another open card with new Kai shows two Kais in its payer list. Choosing either should save correctly.
   - Hand-checked only: the DraftCard and Chat components have no automated tests, and chips have no test at all. The eval hasn't been rerun since these agent changes and has no date check.
+- **Three-column redesign replaces the old panels (Step 6).** Step 6 now merges the essentials of the old Steps 6 and 7, in parts the user can stop after: layout and account summary, Smart settle up, Expenses, Charts, and optional Groups. A horizontal bar replaces the planned donut. Step 7 keeps the manual form, README and screenshots.
+- **`directDebts` cancels circular debts (Step 6).** A probe of the real domain functions showed that plain `pairwiseDebts` goes wrong once suggested payments are recorded: with everyone's net at $0 it still reported me→Arun, Arun→Mei and Mei→me at $15 each. Showing only settle-up amounts on the left would fix that, but one of "You are owed" and "You owe" would always be $0, and Arun's $38 would read $53. Cancelling circles keeps direct debts and clears them after settling. The account summary and `get_balances` use it, so the chat matches the panel; `/api/balances` keeps raw `pairwiseDebts` for now because no panel reads it.
+- **`domain/account.ts` holds the summary maths (Step 6).** The totals, counts and payments saved had no home. A small domain module on top of the existing functions keeps the client free of maths.
+- **"Minimum" stays out of the UI (Step 6).** `suggestSettlements` is greedy. In one probe, 3 direct debts became 4 transfers, so the savings note appears only when the saving is above 0.
+- **Exceptions to "every write goes through a draft" (Step 6).** Delete writes directly, behind a two-click confirm, because there is nothing to preview. Creating a group (if Part E is built) also writes directly, because it moves no money.
 
 ## Where AI got it wrong
 _(Log mistakes as they happen: what it did, how it was caught, and the fix.)_
@@ -108,6 +113,7 @@ _(Log mistakes as they happen: what it did, how it was caught, and the fix.)_
 - Step 5: my browser walkthrough gave five fixes: enforce dates in code, warn when the model respells a name, render basic markdown safely, capitalize new people's names, and show the example chips above the input only until the first message.
 - Step 5: after `/review-step` I approved the test #25 edit and asked for a time-boxed fix round, tests first: Confirm stops on invalid input via a testable helper, a simpler date rule (a phrase in any user message) with `27-10`, `27.10` and "on 3rd", no false `NAME_RESPELLED` on hyphens or curly apostrophes, and doc updates. The other edge cases were logged as known limitations.
 - Step 5: the AI reported one gap left open by that round: an edit the server rejects quickly could still let Confirm save the old value. I approved the test #67 change and asked for the gap to be closed before committing, tests first, reversing client test #14 and logging it as a requirement change.
+- Step 6: I asked for a plan of a redesigned layout, merging the essentials of Steps 6 and 7, in parts I can stop after. I approved `directDebts`, `domain/account.ts`, keeping "minimum" out of the UI, two-click delete and the donut swap. Groups wait until after Part D, with `groupId` on settlements and the optional store field approved if we get there.
 
 ## Where AI sped me up / got in the way
 - Sped me up: scaffolding, the plan structure, and enumerating split-engine edge cases.
@@ -126,6 +132,7 @@ _(Log mistakes as they happen: what it did, how it was caught, and the fix.)_
 - Step 5: tests first (3 server tests failed on assertions, and both client test files failed because their modules didn't exist yet). Curl through the Vite proxy on a scratch database: people, chat with no key → 503, draft → PATCH → confirm → balances, second confirm → 404, and a 502 with an empty plain-text body once the server was stopped.
 - **Incident: a real Gemini key in `.env.example`.** The file is committed, so a real key ended up in a local commit. GitHub push protection detected the secret and blocked the push, so it never reached GitHub. None of my tests or reviews had caught it. Fix: I removed the key from the file, amended the commit and rotated the key, because a key that has been in a commit should count as exposed. New test: `server/test/env-example.test.ts` fails if `.env.example` has any value for `GEMINI_API_KEY` (including a quoted or commented-out one) or any string containing `AIza`. Its assertions compare booleans, so a failure can't print the key, and it also runs its checks on fake values to prove they catch a leak. `npm test` runs locally and isn't a commit hook yet, so it only helps if it's run before pushing.
 
+- Step 6 Part A: tests first (9 server tests failed, plus the new account test file; 2 client tests failed, plus the 2 new client test files), then 383 server and 65 client tests passed with the typecheck clean. Curl through the Vite proxy on a scratch database: three expenses gave owed $64 from 2, owe $25 to 1, net +$39, and recording the three suggested payments took the account to all zeros while raw `pairwiseDebts` still listed debts. Chat with no key → 503. Layout, colours and real Gemini chat are left for the browser check.
 
 ## What I'd do differently
 _(Fill in at the end.)_

@@ -14,6 +14,7 @@ import {
   type Settlement,
 } from '@splitbot/shared';
 import { GeminiRequestError } from './agent/gemini';
+import { accountSummary } from './domain/account';
 import { computeBalances, pairwiseDebts } from './domain/balances';
 import { suggestSettlements } from './domain/settle';
 import { SplitError } from './domain/split';
@@ -206,6 +207,11 @@ export function createApp(deps: AppDeps): express.Express {
       debts: pairwiseDebts(people, expenses, settlements),
     };
     res.json(body);
+  });
+
+  app.get('/api/account', (_req, res) => {
+    const { people, expenses, settlements } = store.snapshot();
+    res.json(accountSummary(people, expenses, settlements));
   });
 
   app.get('/api/summary', (req: Request, res) => {

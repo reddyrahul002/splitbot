@@ -173,6 +173,25 @@ export interface Transfer {
   cents: number;
 }
 
+/** One person's debt with the user: positive means they owe me, negative means I owe them. */
+export interface AccountPerson {
+  personId: PersonId;
+  netCents: number;
+}
+
+/** GET /api/account: what the user is owed and owes, from debts with circles cancelled. */
+export interface Account {
+  owedCents: number;
+  /** How many people owe me. */
+  owedCount: number;
+  oweCents: number;
+  /** How many people I owe. */
+  oweCount: number;
+  netCents: number;
+  /** Everyone but me: owes me, then I owe, then settled. */
+  people: AccountPerson[];
+}
+
 /** Spending for one bucket: one person's share and the group total. */
 export interface SpendRow {
   myCents: number;

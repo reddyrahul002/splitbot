@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Balance, Person, PersonId } from '@splitbot/shared';
-import { computeBalances, pairwiseDebts } from '../src/domain/balances';
+import { computeBalances, directDebts, pairwiseDebts } from '../src/domain/balances';
+import { suggestSettlements } from '../src/domain/settle';
 import { expense, randInt, rng, settlement } from './helpers';
 
 const PEOPLE: Person[] = [
@@ -117,6 +118,92 @@ describe('pairwise debts', () => {
       { from: 'mei', to: 'me', cents: 500 },
       { from: 'kai', to: 'me', cents: 500 },
     ]);
+  });
+});
+
+describe('directDebts', () => {
+  const LUNCH = expense('mei', { mei: 1500, arun: 1500 });
+
+  it('#103 recording every suggested payment leaves no debts, where pairwiseDebts keeps a circle', () => {
+    const expenses = [DINNER, LUNCH];
+    const paid = [settlement('arun', 'me', 5300), settlement('mei', 'me', 1100)];
+    expect(nets(computeBalances(PEOPLE, expenses, paid))).toEqual({ me: 0, arun: 0, mei: 0, kai: 0 });
+    expect(pairwiseDebts(PEOPLE, expenses, paid)).toHaveLength(3);
+    expect(directDebts(PEOPLE, expenses, paid)).toEqual([]);
+  });
+
+  it('#104 after one suggested payment, the remainder matches the next suggestion', () => {
+    const debts = directDebts(PEOPLE, [DINNER, LUNCH], [settlement('arun', 'me', 5300)]);
+    expect(debts).toEqual([{ from: 'mei', to: 'me', cents: 1100 }]);
+  });
+
+  it('#105 debts with no circle stay as they are, including people who never shared with me', () => {
+    const expenses = [DINNER, LUNCH];
+    expect(directDebts(PEOPLE, expenses, [])).toEqual(pairwiseDebts(PEOPLE, expenses, []));
+    expect(directDebts(PEOPLE, expenses, [])).toContainEqual({ from: 'arun', to: 'mei', cents: 1500 });
+  });
+
+  it('#106 a circle is reduced by its smallest debt, and the rest stays', () => {
+    const expenses = [expense('me', { arun: 1000 }), expense('arun', { mei: 400 }), expense('mei', { me: 700 })];
+    expect(directDebts(PEOPLE, expenses, [])).toEqual([
+      { from: 'arun', to: 'me', cents: 600 },
+      { from: 'me', to: 'mei', cents: 300 },
+    ]);
+  });
+
+  it('#107 overlapping circles all clear when every net is 0', () => {
+    const expenses = [
+      expense('me', { arun: 500 }),
+      expense('arun', { mei: 500, kai: 200 }),
+      expense('mei', { me: 500 }),
+      expense('kai', { me: 200 }),
+      expense('me', { arun: 200 }),
+    ];
+    expect(nets(computeBalances(PEOPLE, expenses, []))).toEqual({ me: 0, arun: 0, mei: 0, kai: 0 });
+    expect(directDebts(PEOPLE, expenses, [])).toEqual([]);
+  });
+
+  it('#108 sorts by cents (largest first), ties in people order, and repeats exactly', () => {
+    const expenses = [expense('me', { mei: 500 }), expense('me', { arun: 500 }), expense('kai', { arun: 900 })];
+    const debts = directDebts(PEOPLE, expenses, []);
+    expect(debts).toEqual([
+      { from: 'arun', to: 'kai', cents: 900 },
+      { from: 'arun', to: 'me', cents: 500 },
+      { from: 'mei', to: 'me', cents: 500 },
+    ]);
+    expect(directDebts(PEOPLE, expenses, [])).toEqual(debts);
+  });
+
+  it('#109 seeded random loop: nets are kept, and recording the suggestions clears everything', () => {
+    const rand = rng(3);
+    const ids = PEOPLE.map((p) => p.id);
+    for (let run = 0; run < 500; run++) {
+      const expenses = Array.from({ length: randInt(rand, 0, 8) }, () => {
+        const shares: Record<PersonId, number> = {};
+        for (const id of ids) if (rand() < 0.6) shares[id] = randInt(rand, 0, 100_000);
+        return expense(ids[randInt(rand, 0, ids.length - 1)]!, shares);
+      });
+      const settlements = Array.from({ length: randInt(rand, 0, 4) }, () => {
+        const from = ids[randInt(rand, 0, ids.length - 1)]!;
+        const others = ids.filter((id) => id !== from);
+        return settlement(from, others[randInt(rand, 0, others.length - 1)]!, randInt(rand, 1, 50_000));
+      });
+
+      const balances = computeBalances(PEOPLE, expenses, settlements);
+      const debts = directDebts(PEOPLE, expenses, settlements);
+      for (const b of balances) {
+        const owedToThem = debts.filter((d) => d.to === b.personId).reduce((s, d) => s + d.cents, 0);
+        const theyOwe = debts.filter((d) => d.from === b.personId).reduce((s, d) => s + d.cents, 0);
+        expect(owedToThem - theyOwe).toBe(b.netCents);
+      }
+      for (const d of debts) {
+        expect(Number.isInteger(d.cents) && d.cents > 0).toBe(true);
+        expect(d.from).not.toBe(d.to);
+      }
+
+      const paid = suggestSettlements(balances).map((t) => settlement(t.from, t.to, t.cents));
+      expect(directDebts(PEOPLE, expenses, [...settlements, ...paid])).toEqual([]);
+    }
   });
 });
 

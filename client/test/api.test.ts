@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiRequestError, confirmDraft, discardDraft, editDraft, getPeople, sendChat, UNREACHABLE_MESSAGE } from '../src/api';
+import { ApiRequestError, confirmDraft, discardDraft, editDraft, getAccount, getPeople, sendChat, UNREACHABLE_MESSAGE } from '../src/api';
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -26,6 +26,21 @@ const USER_MESSAGE = [{ role: 'user' as const, text: 'hi' }];
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe('getAccount', () => {
+  const ACCOUNT = { owedCents: 6400, owedCount: 2, oweCents: 0, oweCount: 0, netCents: 6400, people: [{ personId: 'arun', netCents: 6400 }] };
+
+  it('#45 asks /api/account and returns the summary as is', async () => {
+    const fetchMock = stubFetch(json(200, ACCOUNT));
+    await expect(getAccount()).resolves.toEqual(ACCOUNT);
+    expect(fetchMock.mock.calls[0]).toEqual(['/api/account', undefined]);
+  });
+
+  it('#46 a dead server gives the unreachable message', async () => {
+    stubFetch(new TypeError('fetch failed'));
+    expect((await failure(() => getAccount())).message).toBe(UNREACHABLE_MESSAGE);
+  });
 });
 
 describe('sendChat errors', () => {

@@ -37,8 +37,9 @@ splitbot/
     src/drafts.ts         # in-memory Map<draftId, Draft>, 30-min TTL
     test/*.test.ts        # vitest
   client/ (Vite + React + TS)
-    src/App.tsx           # two-pane layout: Chat (left) | Tabs: Balances · Settle up · Insights · History (right)
-    src/components/Chat.tsx, DraftCard.tsx, Markdown.tsx, Balances.tsx, SettleUp.tsx, Insights.tsx, History.tsx
+    src/App.tsx           # three columns: AccountSummary (left) | Tabs: Smart settle up · Expenses · Charts (centre) | Chat (right)
+    src/useAppData.ts     # one refetch for every panel; the latest response wins
+    src/components/Chat.tsx, DraftCard.tsx, Markdown.tsx, AccountSummary.tsx, Tabs.tsx, SettleUp.tsx, Expenses.tsx, Charts.tsx
     src/api.ts            # fetch wrappers
     src/draftLogic.ts     # pure helpers for the chat and draft card (input checks, edit queue, history)
     src/markdown.ts       # bold, italic and lists for chat replies; plain data, never raw HTML
@@ -108,12 +109,12 @@ Chat history lives in client state and is sent with each request; the server is 
 ## Frontend
 - **Chat**: message list, input box and example-prompt chips.
 - **DraftCard**: editable fields (description, amount, payer, category, date), a table of each person's share, and "new person" badges. Buttons: Confirm / Discard. Editing a field calls `PATCH /api/drafts/:id` to recompute the shares.
-- **Balances**: a list of "Arun owes you $38.00", with green for money owed to you and red for money you owe.
-- **Settle up**: suggested transfers, each with a "Record" button that creates a settlement draft and confirms it.
-- **Insights (Recharts)**: donut chart of spending by category, bar chart by month, and a toggle between "my share" and "group total". I'll load the `dataviz` skill before writing the chart code.
-- **History**: list of expenses and settlements, each with a delete button.
+- **Account summary (left column)**: "You are owed $X from N people", "You owe $Y to M people", net balance, and each person's amount, with green for money owed to you and red for money you owe.
+- **Smart settle up (tab)**: overall totals and suggested transfers, each with a "Record payment" button that opens a settlement draft to confirm, plus a note on how many payments it saves.
+- **Expenses (tab)**: expenses and settlements, newest first, with category and person filters and a two-click delete.
+- **Charts (tab, Recharts)**: horizontal bar chart of spending by category, bar chart by month, and a toggle between "my share" and "group total" on those two; a balance-per-person bar chart. I'll load the `dataviz` skill before writing the chart code.
 
-After any confirm or delete, the right-hand panels refetch. Styling is plain CSS, with no UI library, to save time.
+After any confirm or delete, every panel refetches. Styling is plain CSS, with no UI library, to save time.
 
 ## Steps
 Each step ends with `npm test` passing and a commit. After each step I stop for your review before starting the next one.
@@ -133,8 +134,8 @@ Each step ends with `npm test` passing and a commit. After each step I stop for 
 - **Step 3: JSON store + drafts + REST API** (Day 1 afternoon). Tests cover store round-trip and atomic writes, and the draft create/edit/confirm/discard flow through the routes (supertest). The `/api/chat` route is not included yet. See "Step 3 detail" below.
 - **Step 4: Gemini agent** (Day 1 afternoon). Tools, loop, prompt and `/api/chat`. Tests use a mocked Gemini client and cover tool dispatch, the 5-call cap, errors going back to the model, and guardrail warnings appearing on drafts. Then a manual curl check against real Gemini, and the eval script.
 - **Step 5: Chat UI + DraftCard + confirm flow** (Day 1 evening). The dinner example works end to end in the browser, and warnings and "Use Arun" are visible.
-- **Step 6: Balances, Settle up, History panels** (Day 2 morning).
-- **Step 7: Insights charts + polish** (Day 2 morning). Recharts donut and bar charts, error and empty states, manual expense form fallback (via `POST /api/drafts` + confirm), README with setup steps and screenshots, and DECISIONS.md brought up to date.
+- **Step 6: Three-column layout, account summary, Smart settle up, Expenses, Charts, optional Groups** (Day 2 morning). Merges the essentials of the old Steps 6 and 7; built in parts A–E. See "Step 6 detail" below.
+- **Step 7: Polish** (Day 2 morning). Manual expense form fallback (via `POST /api/drafts` + confirm), README with setup steps and screenshots, and DECISIONS.md brought up to date.
 - **Step 8 (stretch): Deploy** the server to Render and the client to Vercel. Render's free tier has an ephemeral disk, so the JSON file would reset on restart; document this or move to a free hosted database.
 
 ## Step 1 detail: shared types + split engine
@@ -459,6 +460,25 @@ Prerequisite: Step 4 is committed. Chat is the only panel for now; Step 6 adds t
 ### Done when
 `npm test`, `npm run typecheck` and a curl check through the Vite proxy pass, then stop for the user's browser walkthrough (Verification below, steps 1–3 and 7, plus edits, Discard and the Gemini error messages). The user runs `/review-step` and commits.
 
+## Step 6 detail: redesigned layout
+Prerequisite: Step 5 is committed. Each part ends with `npm test`, `npm run typecheck` and a curl check through the Vite proxy, then stops for the user's browser check, `/review-step` and a commit (`Step 6 Part X: <summary>`). The user can stop after any part.
+
+### Rules
+- All maths stays on the server in `domain/`; the client only displays. New domain code is limited to `directDebts` and `domain/account.ts`, which build on the existing functions.
+- **`directDebts`** wraps `pairwiseDebts` and cancels circular debts in a fixed order. Without it, recording a Smart settle-up payment between people leaves a false circle (me→Arun, Arun→Mei, Mei→me) after everyone's net is $0. Each person's net is unchanged, and zero nets give no debts. The account summary and the `get_balances` tool use it.
+- The UI doesn't call transfers "minimum", because `suggestSettlements` is greedy. The savings note appears only when the saving is above 0.
+- Delete uses a two-click confirm. Delete and group creation are logged exceptions to "every write goes through a draft".
+
+### Parts
+- **A: Layout + account summary.** Three columns, tab shell, `directDebts`, `accountSummary`, `GET /api/account`, `get_balances` switched to `directDebts`, single refetch in `useAppData`.
+- **B: Smart settle up.** Totals, transfers from `suggestSettlements`, "Record payment" (settlement draft + Confirm), payments-saved note.
+- **C: Expenses.** Expenses and settlements newest first, category and person filters, two-click delete. A category filter hides settlements, which have no category.
+- **D: Charts.** Recharts, after loading the `dataviz` skill: spending by category (horizontal bar) and by month (bar) with a "My share / Group total" toggle, and balance per person (bar). Values stay in cents; `formatCents` formats ticks and tooltips.
+- **E (the user decides after D): Groups.** `Group { id, name, memberIds }`, optional `groupId` on expenses and settlements (a group payment must reduce the group's balance), optional `groups` in the store so old files load unchanged, a Groups tab and a Group dropdown on the draft card. The agent gets no group support.
+
+### Browser data (scratch `DB_PATH`)
+Dinner $90: I paid, split with Arun and Mei, Arun had $12 of drinks. Lunch $30: Mei paid, split with Arun. Gas $50: Kai paid, split with me. Expected: owed $64.00 from 2 people, owe $25.00 to 1 person, net +$39.00; Arun $38 and Mei $26 green, Kai $25 red.
+
 ## Verification
 - **Unit tests (vitest)**, run with `npm test -w server`:
   - split engine: equal splits with leftover cents, itemized adjustments, exact/percent/shares, and every validation error
@@ -469,9 +489,9 @@ Prerequisite: Step 4 is committed. Chat is the only panel for now; Step 6 adds t
 - **Agent check script** (`npm run eval -w server`): about 12 example sentences sent to real Gemini, comparing the structured `create_expense_draft` arguments with the expected values. Examples include the dinner sentence, "Uber $24 Mei paid split 3 ways", "rent 1800 split 60/40 with Arun", an ambiguous one that should trigger a clarifying question, and "how much does Arun owe me?".
 - **End-to-end manual check** (`npm run dev`):
   1. Type the dinner example and check the draft shows me 26 / Arun 38 / Mei 26.
-  2. Confirm it; Balances should show Arun owes $38 and Mei owes $26.
+  2. Confirm it; the account summary should show Arun owes $38 and Mei owes $26.
   3. Ask "how much does Arun owe me?"; the answer should be $38.
-  4. Settle up should list 2 transfers; record one and check the balances update.
-  5. Insights should show Food & Drink.
+  4. Smart settle up should list 2 transfers; record one and check the balances update.
+  5. Charts should show Food & Drink.
   6. Restart the server and check the data is still there (JSON file).
   7. Type "Lunch $40 split with Aroon"; the draft should show the close-name warning, and "Use Arun" should fix it.

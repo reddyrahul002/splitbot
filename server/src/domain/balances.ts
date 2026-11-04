@@ -32,6 +32,52 @@ export function pairwiseDebts(people: Person[], expenses: Expense[], settlements
     if (cents > 0) debts.push({ from: a, to: b, cents });
     if (cents < 0) debts.push({ from: b, to: a, cents: -cents });
   }
+  return sortDebts(people, debts);
+}
+
+/**
+ * Pairwise debts with circles cancelled. A settle-up payment between people can leave a circle (me → Arun, Arun → Mei,
+ * Mei → me) even when everyone's net is 0. Cancelling circles keeps each person's net, and leaves no debts when all nets
+ * are 0. Same order as pairwiseDebts.
+ */
+export function directDebts(people: Person[], expenses: Expense[], settlements: Settlement[]): Transfer[] {
+  const debts = pairwiseDebts(people, expenses, settlements).map((d) => ({ ...d }));
+  for (;;) {
+    const open = debts.filter((d) => d.cents > 0);
+    const circle = findCircle(open);
+    if (!circle) return sortDebts(people, open);
+    const smallest = Math.min(...circle.map((d) => d.cents));
+    for (const d of circle) d.cents -= smallest;
+  }
+}
+
+/** The first circle found by walking the debts in order, or null if there is none. */
+function findCircle(debts: Transfer[]): Transfer[] | null {
+  const path: Transfer[] = [];
+  const cleared = new Set<PersonId>();
+  const walk = (person: PersonId): Transfer[] | null => {
+    for (const debt of debts) {
+      if (debt.from !== person || cleared.has(debt.to)) continue;
+      const start = path.findIndex((d) => d.from === debt.to);
+      if (start !== -1) return [...path.slice(start), debt];
+      path.push(debt);
+      const circle = walk(debt.to);
+      if (circle) return circle;
+      path.pop();
+    }
+    cleared.add(person);
+    return null;
+  };
+  for (const debt of debts) {
+    const circle = walk(debt.from);
+    if (circle) return circle;
+  }
+  return null;
+}
+
+/** Largest first; ties in `people` order. */
+function sortDebts(people: Person[], debts: Transfer[]): Transfer[] {
+  const rank = new Map(people.map((p, i) => [p.id, i]));
   return debts.sort(
     (x, y) => y.cents - x.cents || rank.get(x.from)! - rank.get(y.from)! || rank.get(x.to)! - rank.get(y.to)!,
   );

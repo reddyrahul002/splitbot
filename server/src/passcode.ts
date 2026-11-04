@@ -1,7 +1,7 @@
 // Checks the APP_PASSCODE header. Never logs or returns either value.
 import { createHash, timingSafeEqual } from 'node:crypto';
 
-export const PASSCODE_HEADER = 'x-app-passcode';
+export { PASSCODE_HEADER } from '@splitbot/shared';
 
 const digest = (text: string) => createHash('sha256').update(text).digest();
 

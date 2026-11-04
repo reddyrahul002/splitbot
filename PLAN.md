@@ -506,7 +506,7 @@ Prerequisite: Steps 9 and 10 are committed. The user does the deploying; the AI 
 
 ### Parts
 - **A: Server.** Gate, rate limits, `PORT` and host, `/healthz`, `/api/session`, refuse-to-start checks.
-- **B: Client.** `AccessGate` (checking, waking, locked, unlocked) around `<App />` in `main.tsx`, `UnlockScreen`, and the header added in `api.ts` only when a passcode is stored. The passcode lives in `sessionStorage`. A cold start shows "Waking up the server…" and retries, not the unlock screen.
+- **B: Client.** `AccessGate` (checking, waking, locked, unlocked) around `<App />` in `main.tsx`, `UnlockScreen`, and the header added in `api.ts` only when a passcode is stored. The passcode lives in `sessionStorage`, and a typed one is stored only once it works. A cold start shows "Waking up the server…" and retries every 5 seconds, not the unlock screen; a check held open for 2 seconds says the same. A 401 mid-session returns to the unlock screen. Any other error from our own server opens the app, whose panels show it. The transitions live in `client/src/accessFlow.ts`, so they can be tested without a browser. This only decides what to show: the server enforces the gate.
 - **C: Deploy config and docs.** `client/vercel.json` with a placeholder Render URL (Vercel doesn't document env vars in rewrite destinations), a client `build` script, `tsx` moved to the server's `dependencies`, a server `start` script, a local dry run of both installs, and README deploy steps.
 
 ### Render settings

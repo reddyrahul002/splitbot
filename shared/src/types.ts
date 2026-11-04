@@ -5,6 +5,9 @@ export type PersonId = string;
 /** The built-in person representing the user ("I", "me"). */
 export const ME_ID: PersonId = 'me';
 
+/** Carries encodeURIComponent(passcode) on /api requests, because a header can't hold non-Latin text. */
+export const PASSCODE_HEADER = 'x-app-passcode';
+
 export interface Person {
   id: PersonId;
   name: string;

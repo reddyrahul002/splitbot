@@ -1605,6 +1605,76 @@ button.ghost {
   color: var(--text-muted);
 }
 
+/* Unlock and waking screens */
+.access-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: var(--space-4);
+}
+
+.access-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  width: min(360px, 100%);
+  padding: var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  text-align: center;
+  animation: rise-in var(--motion-slow) var(--ease-out);
+}
+
+.access-card h1 {
+  margin: 0;
+  font-size: var(--text-20);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.access-title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-16);
+  font-weight: 600;
+}
+
+.access-text {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.access-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  text-align: left;
+}
+
+.access-form .card-error {
+  margin: 0;
+}
+
+/* A continuous loading indicator, like the typing dots, so it runs longer than the usual 250ms. Reduced motion stops it. */
+.access-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: var(--radius-full);
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Layouts. Desktop is the default; keep these breakpoints in step with App.tsx. */
 .bottom-nav,
 button.ask-fab,

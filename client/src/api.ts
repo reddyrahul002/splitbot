@@ -16,6 +16,8 @@ import type {
   SettlePlan,
   SpendingSummary,
 } from '@splitbot/shared';
+import { PASSCODE_HEADER } from '@splitbot/shared';
+import { getStoredPasscode } from './passcode';
 
 export const UNREACHABLE_MESSAGE = "Can't reach the server. Is it running?";
 
@@ -32,7 +34,26 @@ export class ApiRequestError extends Error {
 
 const unreachable = (status = 0) => new ApiRequestError(status, 'SERVER_UNREACHABLE', UNREACHABLE_MESSAGE);
 
+const passcodeHeader = (passcode: string) => ({ [PASSCODE_HEADER]: encodeURIComponent(passcode) });
+
+/** Adds the stored passcode. With none, the request is left exactly as it was. */
+function withStoredPasscode(init?: RequestInit): RequestInit | undefined {
+  const stored = getStoredPasscode();
+  return stored ? { ...init, headers: { ...passcodeHeader(stored), ...(init?.headers as Record<string, string> | undefined) } } : init;
+}
+
+let passcodeRequired: (() => void) | null = null;
+
+/** Called when any request comes back locked, so the app can ask for the passcode again. */
+export function onPasscodeRequired(listener: (() => void) | null): void {
+  passcodeRequired = listener;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  return send<T>(path, withStoredPasscode(init));
+}
+
+async function send<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(path, init);
@@ -51,8 +72,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (res.ok) return body as T;
   const error = (body as Partial<ApiError> | null)?.error;
   if (typeof error?.code !== 'string' || typeof error.message !== 'string') throw unreachable(res.status);
+  if (error.code === 'PASSCODE_REQUIRED') passcodeRequired?.();
   throw new ApiRequestError(res.status, error.code, error.message);
 }
+
+/** Asks whether `passcode` unlocks the API. Takes it directly and doesn't use the stored one, so a guess is only stored once it works. */
+export const checkSession = (passcode: string | null) => send<void>('/api/session', passcode ? { headers: passcodeHeader(passcode) } : undefined);
 
 const withJson = (method: string, body: unknown): RequestInit => ({
   method,

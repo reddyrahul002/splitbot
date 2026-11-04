@@ -1,5 +1,21 @@
 # SplitBot: decisions log
 
+## Summary
+
+### The 5 most important decisions
+1. **The LLM extracts; code calculates.** Gemini returns structured tool arguments, and tested TypeScript computes every share, balance and transfer. Trade-off: the tool schemas are more detailed, but a total can't be hallucinated and the logic can be unit tested.
+2. **Every expense and payment goes through a draft.** Nothing the model produces is saved until I click Confirm. Trade-off: one extra click per expense, in exchange for catching model mistakes before they're saved. Deletes, creating a group and adding a member write directly, as approved exceptions, because they have nothing to preview or move no money.
+3. **Guardrails warn, but block guesses about who took part.** Suspicious amounts and names become warnings on the draft, so I stay in control. `UNNAMED_PERSON` and `SPLIT_COUNT_MISMATCH` reject the tool call in the agent path, because prompt rules and warnings didn't stop the model guessing. Trade-off: "split with everyone" is rejected and the model has to ask.
+4. **Integer cents, with leftover cents going to the payer first.** This avoids floating-point drift, and shares always add up exactly to the total. Listed order alone gave different results for the same expense, because the AI picks the order. Trade-off: the split engine now needs `paidBy`.
+5. **A JSON file, single user, no login.** There are no native modules and nothing to set up, which kept the time on the agent and the money logic. Trade-off: no SQL, so summaries are computed in memory, and a host with an ephemeral disk would lose the data.
+
+### The 5 clearest times the AI got it wrong
+1. **Caught by writing a test: a name rule that broke the plan's own example (Step 2).** The AI recommended that the shorter name set the close-name threshold, and I approved it. Writing the tests showed that "Aroon" vs "Arun" would then get no warning. Done: the longer name now sets the threshold.
+2. **Caught by the eval: the model guessed a participant (Step 4).** "Uber $24 Mei paid split 3 ways" should have produced a question, but the model filled in the third person from the known-people list. Reruns showed that a prompt fix didn't hold and that the first code guard couldn't catch a wrong count. Done: `UNNAMED_PERSON` and `SPLIT_COUNT_MISMATCH` now enforce this in code.
+3. **Caught by `/review-step`: an infinite loop behind passing tests (Step 2).** All 120 tests passed, but a probe showed that `spendingSummary` looped forever on a malformed date (`2026-1-05`) and that month-only bounds silently dropped data. The tests had only used valid dates. Done: dates must be real YYYY-MM-DD dates, with regression tests.
+4. **Caught by my browser check: invented dates (Step 5).** Drafts showed 27/10 and 26/10 on 4/11, though I never mentioned a date and the prompt said to leave it out. Neither the tests nor the eval checked dates. Done: code drops the model's date unless a user message contains a date phrase, and the draft then uses today.
+5. **Caught by GitHub: a real Gemini key in `.env.example`.** I'm not certain how it got there, but most likely I pasted the key in myself when updating the model name, instead of into `.env`. The AI's part was missing it: the file is committed, so the key ended up in a local commit, and none of the tests or reviews caught it. GitHub push protection blocked the push, so it never reached GitHub. Done: I removed the key, amended the commit and rotated the key. `server/test/env-example.test.ts` now fails if the file contains a key.
+
 ## Decisions & trade-offs
 - **Store data in a JSON file, not SQLite or Postgres.** For one user, the simplest storage is enough: no native modules and nothing to set up. Trade-off: no SQL queries, so summaries are computed in memory, and free hosts with ephemeral disks would lose the data. Writes are atomic (write a temp file, then rename) and go through a queue so concurrent writes can't corrupt the file.
 - **Single user, no login.** People are just names, and the user is the built-in person `me`. This keeps 1.5 days focused on the agent and the money logic.
@@ -85,6 +101,7 @@
 - **One groups route, not one per group (Step 6 Part E).** My plan listed `GET /api/groups/:id/account`. `GET /api/groups` returns every group with its summary instead, so groups refetch with the other panels in one load and need no per-group loading state.
 - **Known limitation: a payment can be counted twice (Step 6 Part E).** This is a real money error, and it is only warned about, not prevented. A payment recorded with no group (from the overall Smart settle up tab, or a chat draft left on "No group") lowers the overall balance but not the group's. The group keeps suggesting the same payment, and following that suggestion records it twice. With the $90 dinner in a group, recording Arun's $38 both ways takes my overall net from +$64 to -$12, so the app says I owe Arun, while the group looks correct. Test #154 documents this. Notes on both tabs warn about it, and deleting the extra payment in Expenses undoes it, but nothing detects or prompts for it. Preventing it would mean matching payments across views, which isn't built.
 - **Other known limitations (Step 6 Part E).** The dropdown can move a payment to another group or to none. Groups and members can't be renamed or removed. An open payment card closes on a tab switch, like the overall tab's. If the person chosen under Add a person joins through a Confirm first, Add member stays enabled while the dropdown shows "Choose a person"; clicking it changes nothing. There is no test for a 60 or 61 character group name or for adding a member with no request body. The clicks on the Groups form and on the draft card's dropdown have no automated test, because the client tests render static markup.
+- **Step 7 lite: docs only (Step 7).** This step is the README and this summary, with no new features. The manual expense form and the README screenshots that PLAN.md lists for Step 7 are left out. Trade-off: without a working Gemini key or quota, the UI can't add an expense.
 
 ## Where AI got it wrong
 _(Log mistakes as they happen: what it did, how it was caught, and the fix.)_
@@ -136,7 +153,11 @@ _(Log mistakes as they happen: what it did, how it was caught, and the fix.)_
 
 ## Where AI sped me up / got in the way
 - Sped me up: scaffolding, the plan structure, and enumerating split-engine edge cases.
-- Got in the way: _(log as it happens)_
+- Got in the way:
+  - The agent broke my "use the edit tool" rule twice, so I made the rule stricter in CLAUDE.md.
+  - Leftover background servers caused a confusing "missing API key" error that took time to debug.
+  - Gemini 2.5 was closed to new users mid-build, and the free 3.8 Flash tier only allowed about 20 requests a day, so I switched to Flash-Lite.
+  - Flash-Lite wasn't consistent between runs, so prompt fixes alone didn't hold.
 
 ## How I checked quality
 - Tests first for all domain logic (split, balances, settle-up, summary, guardrails).
@@ -149,7 +170,7 @@ _(Log mistakes as they happen: what it did, how it was caught, and the fix.)_
 - Step 4 manual curl against real Gemini (scratch DB): dinner → draft 2600/3800/2600 with nothing saved → confirm → balances −3800/−2600 → "how much does Arun owe me?" → "Arun owes you $38.00." With an empty key: 503 `GEMINI_NOT_CONFIGURED`, `/api/people` still 200.
 - Mutation testing in Step 3 confirmed the tests catch broken confirm/restore, atomic writes and new-person id replacement. Known gap: a crash mid-write isn't tested because it needs killing the process mid-write; accepted for this build.
 - Step 5: tests first (3 server tests failed on assertions, and both client test files failed because their modules didn't exist yet). Curl through the Vite proxy on a scratch database: people, chat with no key → 503, draft → PATCH → confirm → balances, second confirm → 404, and a 502 with an empty plain-text body once the server was stopped.
-- **Incident: a real Gemini key in `.env.example`.** The file is committed, so a real key ended up in a local commit. GitHub push protection detected the secret and blocked the push, so it never reached GitHub. None of my tests or reviews had caught it. Fix: I removed the key from the file, amended the commit and rotated the key, because a key that has been in a commit should count as exposed. New test: `server/test/env-example.test.ts` fails if `.env.example` has any value for `GEMINI_API_KEY` (including a quoted or commented-out one) or any string containing `AIza`. Its assertions compare booleans, so a failure can't print the key, and it also runs its checks on fake values to prove they catch a leak. `npm test` runs locally and isn't a commit hook yet, so it only helps if it's run before pushing.
+- **Incident: a real Gemini key in `.env.example`.** I'm not certain how it got there, but most likely I pasted the key in myself when updating the model name, instead of into `.env`. The file is committed, so a real key ended up in a local commit. GitHub push protection detected the secret and blocked the push, so it never reached GitHub. None of my tests or reviews had caught it. Fix: I removed the key from the file, amended the commit and rotated the key, because a key that has been in a commit should count as exposed. New test: `server/test/env-example.test.ts` fails if `.env.example` has any value for `GEMINI_API_KEY` (including a quoted or commented-out one) or any string containing `AIza`. Its assertions compare booleans, so a failure can't print the key, and it also runs its checks on fake values to prove they catch a leak. `npm test` runs locally and isn't a commit hook yet, so it only helps if it's run before pushing.
 
 - Step 6 Part A: tests first (9 server tests failed, plus the new account test file; 2 client tests failed, plus the 2 new client test files), then 383 server and 65 client tests passed with the typecheck clean. Curl through the Vite proxy on a scratch database: three expenses gave owed $64 from 2, owe $25 to 1, net +$39, and recording the three suggested payments took the account to all zeros while raw `pairwiseDebts` still listed debts. Chat with no key → 503. Layout, colours and real Gemini chat are left for the browser check.
 - Step 6 Part B: tests first (9 server and 3 client tests failed, plus the new `settleUp` test file), then 392 server and 84 client tests passed with the typecheck clean. Curl through the Vite proxy on a scratch database: "Me" gave no warning or new person, an unconfirmed or discarded draft changed nothing, a $10 partial left the right remainder, and recording down the list reached all zeros. Clicks in the tab (Record, Discard, Close on an expired draft) have no automated test because the client tests render static markup, so they're left for the browser check.
@@ -158,4 +179,8 @@ _(Log mistakes as they happen: what it did, how it was caught, and the fix.)_
 - Step 6 Part E: tests first (24 server and 5 client tests failed, plus the new client `groups` test file; the rest of the new tests pinned behaviour that already held), then 419 server and 157 client tests passed with the typecheck clean. Headless Chrome on a scratch database drove the real UI: empty state, create, duplicate name, add member, an API-added expense that brought Mei in on Confirm, Record payment with the group preselected, the group clearing after Confirm with `groupId` saved, and no console errors. Chat was off, so the dropdown on an expense card was checked only by static render and API tests.
 
 ## What I'd do differently
-_(Fill in at the end.)_
+- Put important rules in code from the start, not in the prompt.
+- Build the eval earlier, before the UI.
+- Add component tests for clicks, not just logic.
+- Add a pre-commit secret check instead of relying on GitHub.
+- Build the UI in Angular to match Sitemate's stack.

@@ -26,7 +26,7 @@ splitbot/
     src/index.ts          # entry point: loads config, CORS, opens the store, listen
     src/config.ts         # loads the repo-root .env (whatever the start folder); startup line without values
     src/app.ts            # createApp(deps): Express routes + JSON error handler (testable with supertest)
-    src/store.ts          # JSON file store (data/db.json): in-memory cache, atomic write (tmp + rename), serialized write queue
+    src/store.ts          # JSON file store (server/data/db.json): in-memory cache, atomic write (tmp + rename), serialized write queue
     src/domain/split.ts   # computeShares(): equal | exact | percent | shares, plus itemized adjustments
     src/domain/balances.ts# net balances, pairwise "who owes whom"
     src/domain/settle.ts  # greedy settle-up (at most n−1 transfers): largest creditor vs largest debtor
@@ -142,7 +142,7 @@ Each step ends with `npm test` passing and a commit. After each step I stop for 
 - **Step 4: Gemini agent** (Day 1 afternoon). Tools, loop, prompt and `/api/chat`. Tests use a mocked Gemini client and cover tool dispatch, the 5-call cap, errors going back to the model, and guardrail warnings appearing on drafts. Then a manual curl check against real Gemini, and the eval script.
 - **Step 5: Chat UI + DraftCard + confirm flow** (Day 1 evening). The dinner example works end to end in the browser, and warnings and "Use Arun" are visible.
 - **Step 6: Three-column layout, account summary, Smart settle up, Expenses, Charts, optional Groups** (Day 2 morning). Merges the essentials of the old Steps 6 and 7; built in parts A–E. See "Step 6 detail" below.
-- **Step 7: Polish** (Day 2 morning). Manual expense form fallback (via `POST /api/drafts` + confirm), README with setup steps and screenshots, and DECISIONS.md brought up to date.
+- **Step 7: Polish** (Day 2 morning). README with setup steps, and DECISIONS.md brought up to date. Cut for time: the manual expense form fallback (via `POST /api/drafts` + confirm) and the README screenshots.
 - **Step 8 (stretch): Deploy** the server to Render and the client to Vercel. Render's free tier has an ephemeral disk, so the JSON file would reset on restart; document this or move to a free hosted database.
 
 ## Step 1 detail: shared types + split engine

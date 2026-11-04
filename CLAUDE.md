@@ -16,8 +16,9 @@ SplitBot is a Splitwise-style web app. You type expenses in plain English, and a
 ```
 shared/src/types.ts       # types shared by server and client
 shared/src/money.ts       # toCents, formatCents (server/src/domain/money.ts re-exports them)
-server/src/index.ts       # Express app + routes
-server/src/store.ts       # JSON file store (data/db.json), atomic writes
+server/src/index.ts       # entry point: loads config, opens the store, listens
+server/src/app.ts         # Express app + routes
+server/src/store.ts       # JSON file store (server/data/db.json), atomic writes
 server/src/drafts.ts      # in-memory drafts with TTL
 server/src/domain/        # split, balances, settle, summary, account, guardrails (pure functions)
 server/src/agent/         # Gemini tools, loop, system prompt
